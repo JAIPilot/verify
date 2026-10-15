@@ -40,6 +40,8 @@ Native report adapters:
 
 The agent selects commands appropriate to your project. Existing project instructions can document those commands and report paths. A successful measurement must regenerate its report; stale report files are removed first. Every scoped file must have nonempty primary counters. All measured lines or statements and branches must be covered; all valid generated mutants must be killed. Surviving, ignored, uncovered, errored, and timed-out mutants do not count as killed. Noncompiling/nonviable mutants are excluded and recorded in the evidence.
 
+Evidence commands run directly without shell pipes or chaining, so their exit status belongs to the test or build tool. Verify captures and limits command output itself.
+
 Some formats do not contain branch counters. That limitation is reported; Verify does not infer branch coverage. A project without compatible tooling gets a blocker report. Unsupported languages, equivalent surviving mutants, code without viable mutants, and unreachable code can prevent a 100% result. There is no automatic lowering of thresholds or acceptance of a model-written score. Passing tests and mutation checks protect the behavior exercised; they do not prove that a change is bug-free.
 
 For a Node project, for example, configure [c8](https://github.com/bcoe/c8) to write Istanbul `coverage/coverage-final.json` and [Stryker](https://stryker-mutator.io/docs/stryker-js/configuration/) to write `reports/mutation/mutation.json`. For Java, configure JaCoCo and PIT. Install/configure tooling before verification: baseline production files and build configuration are immutable.

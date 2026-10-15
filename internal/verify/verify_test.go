@@ -102,6 +102,9 @@ func TestFrozenCharacterizationDetectsRegressionAndFinalLockPasses(t *testing.T)
 	if out, err := r.run(ctx, "baseline", "measure", in); err != nil || num(out["exitCode"]) != 0 {
 		t.Fatalf("baseline %v %v", out, err)
 	}
+	if _, err := r.run(ctx, "baseline", "replay_baseline", object{"existingTestsCommand": "node --test existing.test.cjs | tail -1", "timeoutSeconds": 30}); err == nil {
+		t.Fatal("accepted a replay command that could mask test failures")
+	}
 	out, err := r.run(ctx, "baseline", "replay_baseline", object{"existingTestsCommand": "node --test existing.test.cjs", "timeoutSeconds": 30})
 	if err != nil {
 		t.Fatal(err)
@@ -136,6 +139,16 @@ func TestFrozenCharacterizationDetectsRegressionAndFinalLockPasses(t *testing.T)
 	}
 	if _, err = os.Stat(filepath.Join(root, "characterization.test.cjs")); err != nil {
 		t.Fatal("characterization test not promoted")
+	}
+}
+func TestMeasurementsRejectPipelinesThatMaskFailures(t *testing.T) {
+	root := fixture(t)
+	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
+	r := setupRunner(t, root)
+	for _, command := range []string{"false | tail -1", "false; true", "false & true"} {
+		if _, err := r.run(context.Background(), "baseline", "measure", object{"kind": "tests", "command": command, "timeoutSeconds": 5}); err == nil {
+			t.Fatalf("accepted masked failure command %q", command)
+		}
 	}
 }
 func TestEditsRequireAcceptanceAndCommandsCannotChangeSource(t *testing.T) {

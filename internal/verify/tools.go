@@ -60,6 +60,12 @@ func asObject(v any) object {
 	_ = json.Unmarshal(b, &out)
 	return out
 }
+func directEvidenceCommand(command string) error {
+	if strings.ContainsAny(command, "|;&\n\r") {
+		return errors.New("evidence commands must run one direct process without shell pipes or chaining; Verify captures command output itself")
+	}
+	return nil
+}
 func (r *runner) run(ctx context.Context, phase, name string, in object) (object, error) {
 	root := r.root(phase)
 	switch name {
@@ -133,6 +139,9 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 		kind := str(in["kind"])
 		if kind != "tests" && kind != "coverage" && kind != "mutation" {
 			return nil, errors.New("invalid measurement kind")
+		}
+		if err := directEvidenceCommand(str(in["command"])); err != nil {
+			return nil, err
 		}
 		in["purpose"] = "Measure " + phase + " " + kind
 		scope := r.W.FinalScope
@@ -216,6 +225,9 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 		}
 		if r.BaselineTest == nil || r.BaselineTestRevision != revision {
 			return nil, errors.New("run passing baseline tests on this revision first")
+		}
+		if err := directEvidenceCommand(str(in["existingTestsCommand"])); err != nil {
+			return nil, err
 		}
 		for p, v := range r.Frozen {
 			current, e := snapshot(r.W.Candidate, r.W.Known)
