@@ -19,7 +19,7 @@ Verify is an open-source CLI from [JAIPilot](https://www.jaipilot.com/) that che
 Install [Go 1.26.2+](https://go.dev/dl/), then run:
 
 ```sh
-go install github.com/JAIPilot/verify/cmd/verify@latest
+go install github.com/JAIPilot/verify/cmd/verify@main
 verify auth login
 cd your-project
 verify --base main
