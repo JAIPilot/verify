@@ -53,9 +53,9 @@ func TestReviewAndReportFormatting(t *testing.T) {
 	u.color = true
 	u.stage("2", "Review intent and edits")
 	u.preview("Proposed edit", "Fix the result", "@@ -1 +1 @@\n-old\n+new\n")
-	u.report("# Verify: good to go\n\n## Evidence\n- **Tests** passed with `go test`\n\n| Check | Result |\n| --- | --- |\n| Tests | Passed |\n")
+	u.report("# Verify: good to go\n\n## Evidence\n- **Tests** passed with `go test`\n\n| Check | Result |\n| --- | --- |\n| Tests | ✓ Pass |\n")
 	got := output.String()
-	for _, want := range []string{"\x1b[1;36mVERIFY", "\x1b[31m-old", "\x1b[32m+new", "\x1b[1mTests", "\x1b[36mgo test", "┌", "Passed"} {
+	for _, want := range []string{"\x1b[1;36mVERIFY", "\x1b[31m-old", "\x1b[32m+new", "\x1b[1mTests", "\x1b[36mgo test", "┌", "\x1b[32m✓ Pass"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing styled output %q", want)
 		}

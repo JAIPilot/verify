@@ -31,7 +31,7 @@ Verify shares your JAIPilot sign-in. It runs your project's tests locally, so Gi
 1. **Establish the baseline.** Characterize the existing code, require full measured coverage and mutation testing for affected files, then run the existing suite and the new tests against your changes.
 2. **Review and fix.** A review agent examines the diff and test results, asks about your intent when needed, and proposes edits for your approval.
 3. **Lock the behavior.** The original testing agent adds tests for the accepted behavior and reruns tests, coverage, and mutation checks.
-4. **Get the report.** A separate reporting agent explains the evidence, decisions, blockers, and final verdict.
+4. **Get the report.** A short checklist shows the evidence, review decision, blockers, and final verdict.
 
 Verify shows you the complete tested diff before offering to apply it. A passing report requires fresh evidence for the affected files; missing coverage or surviving mutants appear as blockers.
 Answer yes/no prompts with `y` or `n`; other reviews accept a numbered choice or a comment typed directly.

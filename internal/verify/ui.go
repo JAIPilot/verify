@@ -275,6 +275,17 @@ func (u *terminalUI) table(lines []string) {
 			padding := strings.Repeat(" ", width-len([]rune(value)))
 			if i == 0 {
 				value = u.paint("1", u.inline(value))
+			} else if j == 1 {
+				tone := ""
+				switch {
+				case strings.HasPrefix(value, "✓"):
+					tone = "32"
+				case strings.HasPrefix(value, "✗"):
+					tone = "31"
+				case strings.HasPrefix(value, "—"):
+					tone = "33"
+				}
+				value = u.paint(tone, value)
 			} else {
 				value = u.inline(value)
 			}
