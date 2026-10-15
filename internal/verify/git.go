@@ -21,10 +21,10 @@ type fileState struct {
 }
 type tree map[string]fileState
 type workspace struct {
-	Root, Base, Baseline, Candidate, RunDir, InitialDiff string
-	Original                                             tree
-	Known                                                map[string]bool
-	BaselineScope, FinalScope                            []string
+	Root, Base, Baseline, Candidate, RunDir string
+	Original                                tree
+	Known                                   map[string]bool
+	BaselineScope, FinalScope               []string
 }
 
 func git(root string, input []byte, args ...string) ([]byte, error) {
@@ -226,7 +226,7 @@ func prepare(root, base string) (*workspace, error) {
 	if err = os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	w := &workspace{Root: root, Base: base, RunDir: dir, Baseline: filepath.Join(dir, "baseline"), Candidate: filepath.Join(dir, "candidate"), Known: map[string]bool{}, InitialDiff: string(diff)}
+	w := &workspace{Root: root, Base: base, RunDir: dir, Baseline: filepath.Join(dir, "baseline"), Candidate: filepath.Join(dir, "candidate"), Known: map[string]bool{}}
 	for _, p := range paths(untracked) {
 		w.Known[p] = true
 	}
@@ -323,7 +323,8 @@ func (w *workspace) diff() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	out := string(b)
+	var out strings.Builder
+	out.Write(b)
 	tracked, err := git(w.Candidate, nil, "ls-files", "-z")
 	if err != nil {
 		return "", err
@@ -344,15 +345,36 @@ func (w *workspace) diff() (string, error) {
 		if e != nil {
 			return "", e
 		}
-		if len(data) > 1<<20 {
-			return "", fmt.Errorf("new file too large for review: %s", p)
+		fmt.Fprintf(&out, "\n--- /dev/null\n+++ b/%s\n", p)
+		if bytes.IndexByte(data, 0) >= 0 {
+			fmt.Fprintf(&out, "Binary file added (%d bytes); inspect the local file directly.\n", len(data))
+			continue
 		}
-		out += "\n--- /dev/null\n+++ b/" + p + "\n"
 		for _, line := range strings.Split(string(data), "\n") {
-			out += "+" + line + "\n"
+			out.WriteByte('+')
+			out.WriteString(line)
+			out.WriteByte('\n')
 		}
 	}
-	return out, nil
+	return out.String(), nil
+}
+
+func (w *workspace) reviewDiff(stage, full string) (string, error) {
+	path := filepath.Join(w.RunDir, stage+".diff")
+	if err := writeBytes(path, []byte(full), 0600); err != nil {
+		return "", err
+	}
+	if len(full) <= 48<<10 {
+		return full, nil
+	}
+	status, err := gitText(w.Candidate, "status", "--short", "--untracked-files=all")
+	if err != nil {
+		return "", err
+	}
+	if len(status) > 48<<10 {
+		status = status[:48<<10] + "\n… additional paths are in the saved diff"
+	}
+	return fmt.Sprintf("%d-byte diff saved to %s\nReview that file before accepting. Changed paths:\n%s", len(full), path, status), nil
 }
 func (w *workspace) promote() error {
 	now, err := snapshot(w.Root, w.Known)

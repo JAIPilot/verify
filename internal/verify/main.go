@@ -196,13 +196,6 @@ func verify(ctx context.Context, o options) (report object, err error) {
 	if err != nil {
 		return nil, err
 	}
-	initialDiff, err := w.diff()
-	if err != nil {
-		return nil, err
-	}
-	if len(initialDiff) > 512<<10 {
-		return nil, errors.New("diff exceeds 512 KiB; verify a smaller branch")
-	}
 	r := &runner{W: w}
 	r.BaselineOriginal, err = snapshot(w.Baseline, w.Known)
 	if err != nil {
@@ -241,7 +234,7 @@ func verify(ctx context.Context, o options) (report object, err error) {
 			}
 		}
 	}()
-	body := object{"requestId": uuid(), "context": object{"base": w.Base, "diff": initialDiff, "baselineScope": nonNil(w.BaselineScope), "finalScope": nonNil(w.FinalScope), "platform": platform(), "instructions": "Read project instructions from the worktree. All source paths and commands are relative to the active workspace."}}
+	body := object{"requestId": uuid(), "context": object{"base": w.Base, "baselineScope": nonNil(w.BaselineScope), "finalScope": nonNil(w.FinalScope), "platform": platform(), "instructions": "Read project instructions from the worktree. The diff stays local; use shell and file tools to inspect it. All source paths and commands are relative to the active workspace."}}
 	lastPhase := ""
 	for turn := 0; turn < o.MaxTurns+8; turn++ {
 		if e := atomicJSON(filepath.Join(w.RunDir, "request.json"), body, 0600); e != nil {
@@ -285,7 +278,11 @@ func verify(ctx context.Context, o options) (report object, err error) {
 				if e != nil {
 					return report, e
 				}
-				fmt.Fprintln(os.Stderr, "\nFinal verified diff:\n"+diff)
+				preview, e := w.reviewDiff("final", diff)
+				if e != nil {
+					return report, e
+				}
+				fmt.Fprintln(os.Stderr, "\nFinal verified diff:\n"+preview)
 				before, e := snapshot(w.Candidate, w.Known)
 				if e != nil {
 					return report, e

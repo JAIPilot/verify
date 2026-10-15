@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -111,7 +112,7 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 		}
 		content := str(in["content"])
 		if len(content) > 512<<10 {
-			return nil, errors.New("file edit exceeds 512 KiB")
+			return nil, errors.New("full-file edit exceeds 512 KiB; use edit_file for exact changes in existing files")
 		}
 		if phase == "review" {
 			fmt.Fprintf(os.Stderr, "\nProposed edit: %s\n%s\n", rel, str(in["explanation"]))
@@ -134,6 +135,44 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 			}
 			err = writeBytes(p, []byte(content), mode)
 		}
+		return object{"accepted": err == nil, "path": rel}, err
+	case "edit_file":
+		rel := filepath.ToSlash(filepath.Clean(str(in["path"])))
+		p, err := safePath(root, rel)
+		if err != nil {
+			return nil, err
+		}
+		if phase != "review" && !testPath(rel) {
+			return nil, errors.New("only test files can change during characterization")
+		}
+		if phase == "baseline" && r.BaselineOriginal[rel].Hash != "" {
+			return nil, errors.New("baseline characterization must use new test files; existing tests are immutable")
+		}
+		old, err := os.ReadFile(p)
+		if err != nil {
+			return nil, err
+		}
+		before, after := []byte(str(in["oldText"])), []byte(str(in["newText"]))
+		if len(before) == 0 || bytes.Equal(before, after) || bytes.Count(old, before) != 1 {
+			return nil, errors.New("edit_file requires one unique, nonempty oldText and a changed replacement")
+		}
+		updated := bytes.Replace(old, before, after, 1)
+		if phase == "review" {
+			fmt.Fprintf(os.Stderr, "\nProposed edit: %s\n%s\n", rel, str(in["explanation"]))
+			printFileDiff(rel, old, updated, false)
+			answer, ok := r.Ask("Accept this edit? [y/N, or give feedback]")
+			if !ok {
+				return object{"needsReview": true, "reason": "User approval is required for proposed edits"}, nil
+			}
+			if !yes(answer) {
+				return object{"accepted": false, "feedback": answer}, errors.New("edit was not accepted")
+			}
+		}
+		info, err := os.Stat(p)
+		if err != nil {
+			return nil, err
+		}
+		err = writeBytes(p, updated, info.Mode().Perm())
 		return object{"accepted": err == nil, "path": rel}, err
 	case "measure":
 		kind := str(in["kind"])
@@ -305,7 +344,11 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 			if err != nil {
 				return nil, err
 			}
-			fmt.Fprintln(os.Stderr, "\nReview the complete candidate diff:\n"+diff+"\n"+str(in["summary"]))
+			preview, err := r.W.reviewDiff("review", diff)
+			if err != nil {
+				return nil, err
+			}
+			fmt.Fprintln(os.Stderr, "\nReview the complete candidate diff:\n"+preview+"\n"+str(in["summary"]))
 			before, err := snapshot(root, r.W.Known)
 			if err != nil {
 				return nil, err

@@ -173,6 +173,25 @@ func TestEditsRequireAcceptanceAndCommandsCannotChangeSource(t *testing.T) {
 		t.Fatal("original was changed")
 	}
 }
+func TestExactEditWorksForLargeExistingFile(t *testing.T) {
+	root := fixture(t)
+	mustWrite(t, root, "calc.cjs", strings.Repeat("// filler\n", 70000)+"module.exports = x => x + 2;\n")
+	r := setupRunner(t, root)
+	edit := object{"path": "calc.cjs", "oldText": "x + 2", "newText": "x + 3", "explanation": "Fix the result"}
+	if out, err := r.run(context.Background(), "review", "edit_file", edit); err != nil || out["accepted"] != true {
+		t.Fatalf("exact edit failed: %v %v", out, err)
+	}
+	b, err := os.ReadFile(filepath.Join(r.W.Candidate, "calc.cjs"))
+	if err != nil || len(b) <= 512<<10 || !strings.Contains(string(b), "x + 3") {
+		t.Fatal("large candidate file was not edited")
+	}
+	if _, err := r.run(context.Background(), "review", "edit_file", object{"path": "calc.cjs", "oldText": "filler", "newText": "changed"}); err == nil {
+		t.Fatal("ambiguous replacement was accepted")
+	}
+	if _, err := r.run(context.Background(), "lock", "edit_file", edit); err == nil {
+		t.Fatal("source changed after review")
+	}
+}
 func TestConcurrentCheckoutChangesPreventPromotion(t *testing.T) {
 	root := fixture(t)
 	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
@@ -274,6 +293,45 @@ func TestNonInteractiveRunFinishesWithNeedsReviewReport(t *testing.T) {
 		t.Fatal("report not persisted")
 	}
 	workspaces := obj(report["workspaces"])
+	for _, key := range []string{"baseline", "candidate"} {
+		_, _ = git(root, nil, "worktree", "remove", "--force", str(workspaces[key]))
+	}
+	_ = os.RemoveAll(filepath.Dir(str(report["reportPath"])))
+}
+
+func TestLargeDiffIsInspectedThroughToolsInsteadOfRejected(t *testing.T) {
+	root := fixture(t)
+	mustWrite(t, root, "calc.cjs", "module.exports = `"+strings.Repeat("a", 600<<10)+"`;\n")
+	mustWrite(t, root, "new.cjs", strings.Repeat("b", 1100<<10))
+	old := requestService
+	defer func() { requestService = old }()
+	requestService = func(_ context.Context, body object) (object, error) {
+		context := obj(body["context"])
+		if _, uploaded := context["diff"]; uploaded ||
+			len(str(context["instructions"])) > 500 ||
+			!strings.Contains(str(context["instructions"]), "diff stays local") {
+			t.Fatalf("large diff was uploaded instead of left in the worktree: %v", context)
+		}
+		return object{"phase": "done", "verdict": "needs_review", "report": "Inspect large diff"}, nil
+	}
+	report, err := verify(context.Background(), options{Repo: root, Base: "main", NonInteractive: true})
+	if err != nil || report["verdict"] != "needs_review" {
+		t.Fatalf("large diff failed before model inspection: %v, %v", err, report)
+	}
+	workspaces := obj(report["workspaces"])
+	w := &workspace{Candidate: str(workspaces["candidate"]), Base: str(report["base"]), RunDir: filepath.Dir(str(report["reportPath"]))}
+	full, err := w.diff()
+	if err != nil || len(full) <= 512<<10 {
+		t.Fatalf("fixture did not retain its full local diff: %d %v", len(full), err)
+	}
+	preview, err := w.reviewDiff("review", full)
+	if err != nil || len(preview) > 100<<10 {
+		t.Fatalf("large approval preview failed: %d %v", len(preview), err)
+	}
+	saved, err := os.ReadFile(filepath.Join(w.RunDir, "review.diff"))
+	if err != nil || string(saved) != full {
+		t.Fatal("approval diff was not saved in full")
+	}
 	for _, key := range []string{"baseline", "candidate"} {
 		_, _ = git(root, nil, "worktree", "remove", "--force", str(workspaces[key]))
 	}
