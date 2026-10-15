@@ -84,6 +84,13 @@ func TestFrozenCharacterizationDetectsRegressionAndFinalLockPasses(t *testing.T)
 		t.Skip("node unavailable")
 	}
 	root := fixture(t)
+	mustWrite(t, root, "existing.test.cjs", "const {test}=require('node:test'); const assert=require('node:assert/strict'); test('existing suite',()=>assert.equal(typeof require('./calc.cjs'),'function'));\n")
+	if _, err := git(root, nil, "add", "existing.test.cjs"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := git(root, nil, "commit", "-m", "existing test"); err != nil {
+		t.Fatal(err)
+	}
 	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
 	r := setupRunner(t, root)
 	ctx := context.Background()
@@ -95,9 +102,13 @@ func TestFrozenCharacterizationDetectsRegressionAndFinalLockPasses(t *testing.T)
 	if out, err := r.run(ctx, "baseline", "measure", in); err != nil || num(out["exitCode"]) != 0 {
 		t.Fatalf("baseline %v %v", out, err)
 	}
-	out, err := r.run(ctx, "baseline", "replay_baseline", object{})
+	out, err := r.run(ctx, "baseline", "replay_baseline", object{"existingTestsCommand": "node --test existing.test.cjs", "timeoutSeconds": 30})
 	if err != nil {
 		t.Fatal(err)
+	}
+	existing := out["existingTests"].(CommandResult)
+	if existing.ExitCode != 0 || !strings.Contains(existing.Output, "existing suite") {
+		t.Fatalf("existing candidate suite did not run before replay: %v", out["existingTests"])
 	}
 	frozen := out["characterizationTests"].(CommandResult)
 	if frozen.ExitCode == 0 {

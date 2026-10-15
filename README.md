@@ -29,7 +29,7 @@ Verify shares your JAIPilot sign-in. It runs your project's tests locally, so Gi
 
 ## How Verify works
 
-1. **Establish the baseline.** Characterize the existing code, require full measured coverage and mutation testing for affected files, then run those tests against your changes.
+1. **Establish the baseline.** Characterize the existing code, require full measured coverage and mutation testing for affected files, then run the existing suite and the new tests against your changes.
 2. **Review and fix.** A review agent examines the diff and test results, asks about your intent, and proposes edits for your approval.
 3. **Lock the behavior.** The original testing agent adds tests for the accepted behavior and reruns tests, coverage, and mutation checks.
 4. **Get the report.** A separate reporting agent explains the evidence, decisions, blockers, and final verdict.

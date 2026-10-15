@@ -8,7 +8,7 @@ If you are already signed in with `jaipilot`, Verify uses the same session. `ver
 
 | Stage | Agent | What happens |
 | --- | --- | --- |
-| 1. Establish the baseline | Tester | Start at the merge-base before your changes. Add characterization tests in new files. Run tests, require 100% measured coverage and mutation score for affected existing source files, then replay the same frozen tests against your diff. Review the diff alongside passing and failing results. |
+| 1. Establish the baseline | Tester | Start at the merge-base before your changes. Add characterization tests in new files. Run tests, require 100% measured coverage and mutation score for affected existing source files, then run the candidate's full existing suite and replay the same frozen tests against your diff. Review the diff alongside passing and failing results. |
 | 2. Review intent and edits | Reviewer | Ask about intended behavior, distinguish regressions from intentional changes, propose code and test edits, and get your approval. You explicitly accept the complete candidate diff before continuing. |
 | 3. Lock the accepted behavior | The same tester | Keep accepted production code frozen. Add or update characterization tests for the new behavior. Require fresh passing tests, 100% measured coverage, and 100% mutation score for the final affected source files. |
 | 4. Report | Separate, simpler reporter | Explain the baseline, replay results, decisions, edits, final evidence, blockers, and verdict. This agent has no shell or edit tools. |

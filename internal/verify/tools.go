@@ -229,7 +229,12 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 				return nil, e
 			}
 		}
-		originalTests, err := r.guarded(ctx, "review", r.BaselineTest)
+		existingSuite := object{
+			"command":        str(in["existingTestsCommand"]),
+			"timeoutSeconds": in["timeoutSeconds"],
+			"purpose":        "Run existing candidate test suite",
+		}
+		originalTests, err := r.guarded(ctx, "review", existingSuite)
 		if err != nil {
 			return object{"needsReview": true}, err
 		}
@@ -262,11 +267,20 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 		if len(r.W.BaselineScope) > 0 && len(r.Frozen) == 0 {
 			return nil, errors.New("add characterization tests before replay")
 		}
-		result, err := r.guarded(ctx, "review", r.BaselineTest)
+		characterization := object{
+			"command":        r.BaselineTest["command"],
+			"timeoutSeconds": r.BaselineTest["timeoutSeconds"],
+			"purpose":        "Replay baseline characterization tests",
+		}
+		result, err := r.guarded(ctx, "review", characterization)
 		if err != nil {
 			return object{"needsReview": true}, err
 		}
-		return object{"kind": "replay", "baselineRevision": revision, "existingTests": originalTests, "characterizationTests": result, "frozenFiles": r.Frozen, "exitCode": result.ExitCode}, nil
+		exitCode := result.ExitCode
+		if originalTests.ExitCode != 0 && exitCode == 0 {
+			exitCode = originalTests.ExitCode
+		}
+		return object{"kind": "replay", "baselineRevision": revision, "existingTests": originalTests, "characterizationTests": result, "frozenFiles": r.Frozen, "exitCode": exitCode}, nil
 	case "ask_user":
 		answer, ok := r.Ask(str(in["question"]))
 		if !ok {
