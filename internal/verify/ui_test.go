@@ -8,15 +8,18 @@ import (
 
 func TestQuestionChoicesAndComment(t *testing.T) {
 	var output bytes.Buffer
-	u := newTerminalUI(strings.NewReader("8\n3\n\nKeep the existing behavior\n"), &output)
+	u := newTerminalUI(strings.NewReader("8\n\nKeep the existing behavior\n"), &output)
 	answer, ok := u.choose("Which behavior is intended?", []string{"Preserve old", "Use new"}, true)
 	if !ok || answer != "Keep the existing behavior" {
 		t.Fatalf("comment answer = %q, %v", answer, ok)
 	}
-	for _, want := range []string{"1.  Preserve old", "2.  Use new", "3.  Add a comment", "Choose a number", "Please enter a comment"} {
+	for _, want := range []string{"1.  Preserve old", "2.  Use new", "Choose 1–2 or type a comment", "Choose a listed number or type a comment", "Comment sent"} {
 		if !strings.Contains(output.String(), want) {
 			t.Errorf("missing %q from menu: %s", want, output.String())
 		}
+	}
+	if strings.Contains(output.String(), "Add a comment") || strings.Contains(output.String(), "Your comment:") {
+		t.Fatal("comment requires an unnecessary second step")
 	}
 	output.Reset()
 	u = newTerminalUI(strings.NewReader("2\n"), &output)
@@ -26,6 +29,11 @@ func TestQuestionChoicesAndComment(t *testing.T) {
 	u = newTerminalUI(strings.NewReader(""), &output)
 	if _, ok = u.choose("Intended?", []string{"Yes", "No"}, true); ok {
 		t.Fatal("EOF accepted an answer")
+	}
+	output.Reset()
+	u = newTerminalUI(strings.NewReader("Please revise\n2\n"), &output)
+	if answer, ok = u.choose("Apply?", []string{"Apply", "Leave"}, false); !ok || answer != "Leave" {
+		t.Fatalf("final decision accepted free text: %q, %v", answer, ok)
 	}
 }
 

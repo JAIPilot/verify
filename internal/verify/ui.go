@@ -72,42 +72,33 @@ func (u *terminalUI) choose(question string, options []string, comment bool) (st
 			}
 		}
 	}
-	if comment {
-		fmt.Fprintf(u.out, "%s  %s  Add a comment\n", u.paint("36", "│"), u.paint("36", strconv.Itoa(len(options)+1)+"."))
-	}
 	fmt.Fprintln(u.out, u.paint("36", "╰"+strings.Repeat("─", 58)))
-	count := len(options)
+	prompt := "Choose 1–" + strconv.Itoa(len(options))
 	if comment {
-		count++
+		prompt += " or type a comment"
 	}
 	for {
-		fmt.Fprint(u.out, u.paint("36", "› ")+"Choose 1–"+strconv.Itoa(count)+": ")
+		fmt.Fprint(u.out, u.paint("36", "› ")+prompt+": ")
 		line, err := u.in.ReadString('\n')
 		if err != nil && line == "" {
 			fmt.Fprintln(u.out)
 			return "", false
 		}
-		choice, parseErr := strconv.Atoi(strings.TrimSpace(line))
-		if parseErr == nil && choice >= 1 && choice <= count {
-			if comment && choice == count {
-				for {
-					fmt.Fprint(u.out, u.paint("36", "› ")+"Your comment: ")
-					answer, readErr := u.in.ReadString('\n')
-					if readErr != nil && answer == "" {
-						fmt.Fprintln(u.out)
-						return "", false
-					}
-					if answer = strings.TrimSpace(answer); answer != "" {
-						fmt.Fprintln(u.out, u.paint("32", "  ✓")+" Comment sent")
-						return answer, true
-					}
-					fmt.Fprintln(u.out, u.paint("33", "Please enter a comment."))
-				}
-			}
+		answer := strings.TrimSpace(line)
+		choice, parseErr := strconv.Atoi(answer)
+		if parseErr == nil && choice >= 1 && choice <= len(options) {
 			fmt.Fprintln(u.out, u.paint("32", "  ✓")+" "+options[choice-1])
 			return options[choice-1], true
 		}
-		fmt.Fprintln(u.out, u.paint("33", "Choose a number from the list."))
+		if comment && answer != "" && parseErr != nil {
+			fmt.Fprintln(u.out, u.paint("32", "  ✓")+" Comment sent")
+			return answer, true
+		}
+		hint := "Choose a listed number."
+		if comment {
+			hint = "Choose a listed number or type a comment."
+		}
+		fmt.Fprintln(u.out, u.paint("33", hint))
 	}
 }
 

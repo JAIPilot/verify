@@ -356,6 +356,12 @@ func TestAgentQuestionPresentsOptionsAndReturnsSelection(t *testing.T) {
 	if err != nil || result["answer"] != "Preserve the error" {
 		t.Fatalf("wrong answer: %v, %v", result, err)
 	}
+	output := &strings.Builder{}
+	r.AskChoice = newTerminalUI(strings.NewReader("Keep the error message unchanged\n"), output).choose
+	result, err = r.run(context.Background(), "review", "ask_user", object{"question": "Should null stay an error?", "options": []any{"Preserve the error", "Return an empty result"}})
+	if err != nil || result["answer"] != "Keep the error message unchanged" {
+		t.Fatalf("direct comment did not reach the agent: %v, %v", result, err)
+	}
 }
 func TestGroupedReadsAndUsageAreRecorded(t *testing.T) {
 	root := fixture(t)
