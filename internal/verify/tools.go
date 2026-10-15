@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 type runner struct {
+	mu                         sync.Mutex
 	W                          *workspace
 	Ask                        func(string) (string, bool)
 	BaselineOriginal, Accepted tree
@@ -131,6 +134,7 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 		if kind != "tests" && kind != "coverage" && kind != "mutation" {
 			return nil, errors.New("invalid measurement kind")
 		}
+		in["purpose"] = "Measure " + phase + " " + kind
 		scope := r.W.FinalScope
 		if phase == "baseline" {
 			scope = r.W.BaselineScope
@@ -362,7 +366,9 @@ func (r *runner) tool(ctx context.Context, phase string, call object) object {
 		result["error"] = err.Error()
 		fmt.Fprintln(os.Stderr, "Verify:", err)
 	}
+	r.mu.Lock()
 	r.Events = append(r.Events, object{"phase": phase, "tool": name, "input": obj(call["input"]), "result": out})
+	r.mu.Unlock()
 	return out
 }
 func yes(s string) bool {
@@ -379,10 +385,19 @@ func printFileDiff(path string, old, new []byte, deleting bool) {
 	defer os.RemoveAll(dir)
 	_ = os.WriteFile(filepath.Join(dir, "before"), old, 0600)
 	_ = os.WriteFile(filepath.Join(dir, "after"), new, 0600)
-	b, _ := git(dir, nil, "diff", "--no-index", "--no-ext-diff", "--", "before", "after")
+	command := exec.Command("git", "-c", "core.quotePath=false", "diff", "--no-index", "--no-ext-diff", "--", "before", "after")
+	command.Dir = dir
+	b, err := command.Output()
 	fmt.Fprintln(os.Stderr, "File:", path)
 	if deleting {
 		fmt.Fprintln(os.Stderr, "Delete file")
+	}
+	if err != nil {
+		if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
+			fmt.Fprintln(os.Stderr, "Could not render diff; proposed file follows:")
+			fmt.Fprintln(os.Stderr, string(new))
+			return
+		}
 	}
 	fmt.Fprintln(os.Stderr, string(b))
 }

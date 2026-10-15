@@ -11,7 +11,9 @@ import (
 	"time"
 )
 
-const maxOutput = 80000
+// Keep command diagnostics useful without repeatedly sending entire build logs
+// through every subsequent model turn.
+const maxOutput = 16000
 
 type CommandResult struct {
 	Command    string `json:"command"`

@@ -12,7 +12,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -76,6 +78,11 @@ func Main(args []string) int {
 		} else {
 			fmt.Println(str(report["report"]))
 			fmt.Fprintln(os.Stderr, "Report:", str(report["reportPath"]))
+			if u, ok := report["usage"].(map[string]any); ok {
+				cost, _ := u["estimatedProviderUsd"].(float64)
+				elapsed, _ := report["durationMs"].(int64)
+				fmt.Fprintf(os.Stderr, "Verify: %s · %d model turns · $%.4f estimated provider cost\n", (time.Duration(elapsed) * time.Millisecond).Round(time.Second), num(u["modelTurns"]), cost)
+			}
 		}
 	}
 	if err != nil {
@@ -160,6 +167,9 @@ func service(ctx context.Context, body object) (object, error) {
 			if str(value["error"]) == "" {
 				return nil, fmt.Errorf("verification service returned HTTP %d", status)
 			}
+			if detail := str(value["providerMessage"]); detail != "" {
+				return nil, fmt.Errorf("%s: %s", str(value["error"]), detail)
+			}
 			return nil, errors.New(str(value["error"]))
 		}
 		delay := time.Duration(2+attempt) * time.Second
@@ -181,6 +191,7 @@ func service(ctx context.Context, body object) (object, error) {
 var requestService = service
 
 func verify(ctx context.Context, o options) (report object, err error) {
+	started := time.Now()
 	w, err := prepare(o.Repo, o.Base)
 	if err != nil {
 		return nil, err
@@ -209,8 +220,10 @@ func verify(ctx context.Context, o options) (report object, err error) {
 		}
 		return strings.TrimSpace(answer), true
 	}
-	report = object{"version": 1, "verdict": "not_ready", "base": w.Base, "repository": w.Root, "baselineScope": w.BaselineScope, "finalScope": w.FinalScope, "workspaces": object{"baseline": w.Baseline, "candidate": w.Candidate}, "reportPath": filepath.Join(w.RunDir, "report.json"), "applied": false}
+	usage := object{"modelTurns": 0, "inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0, "estimatedProviderUsd": 0.0}
+	report = object{"version": 1, "verdict": "not_ready", "base": w.Base, "repository": w.Root, "baselineScope": w.BaselineScope, "finalScope": w.FinalScope, "workspaces": object{"baseline": w.Baseline, "candidate": w.Candidate}, "reportPath": filepath.Join(w.RunDir, "report.json"), "applied": false, "usage": usage}
 	defer func() {
+		report["durationMs"] = time.Since(started).Milliseconds()
 		report["events"] = r.Events
 		report["finalScope"] = w.FinalScope
 		if err != nil {
@@ -238,9 +251,21 @@ func verify(ctx context.Context, o options) (report object, err error) {
 		if e != nil {
 			return report, e
 		}
+		if u, ok := response["usage"].(map[string]any); ok {
+			usage["modelTurns"] = num(usage["modelTurns"]) + 1
+			for _, field := range []string{"inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens"} {
+				usage[field] = num(usage[field]) + num(u[field])
+			}
+			if cost, e := strconv.ParseFloat(str(u["providerUsd"]), 64); e == nil && cost >= 0 {
+				usage["estimatedProviderUsd"] = usage["estimatedProviderUsd"].(float64) + cost
+			}
+		}
 		phase := str(response["phase"])
 		if phase != lastPhase {
-			fmt.Fprintln(os.Stderr, "Verify stage:", phase)
+			labels := map[string]string{"baseline": "1/4 Characterize the baseline", "review": "2/4 Review intent and edits", "lock": "3/4 Lock accepted behavior", "report": "4/4 Prepare the report"}
+			if label := labels[phase]; label != "" {
+				fmt.Fprintln(os.Stderr, "\nVerify:", label)
+			}
 			lastPhase = phase
 		}
 		if phase == "done" {
@@ -286,17 +311,41 @@ func verify(ctx context.Context, o options) (report object, err error) {
 			return report, errors.New("invalid backend stage")
 		}
 		calls := list(response["content"])
-		if len(calls) != 1 || str(response["state"]) == "" {
+		if len(calls) > 16 || str(response["state"]) == "" {
 			return report, errors.New("invalid backend tool response")
 		}
-		call := obj(calls[0])
-		var result object
-		if turn >= o.MaxTurns && phase != "report" {
-			result = object{"toolUseId": str(call["id"]), "value": object{"needsReview": true, "reason": "Model turn budget reached before verification completed"}}
-		} else {
-			result = r.tool(ctx, phase, call)
+		if len(calls) == 0 {
+			body = object{"requestId": uuid(), "state": response["state"], "results": []object{}}
+			continue
 		}
-		body = object{"requestId": uuid(), "state": response["state"], "results": []object{result}}
+		parallelReads := len(calls) > 1
+		if len(calls) > 1 {
+			for _, c := range calls {
+				if str(obj(c)["name"]) != "read_file" {
+					parallelReads = false
+				}
+			}
+		}
+		results := make([]object, len(calls))
+		var group sync.WaitGroup
+		for i, raw := range calls {
+			call := obj(raw)
+			if turn >= o.MaxTurns && phase != "report" {
+				results[i] = object{"toolUseId": str(call["id"]), "value": object{"needsReview": true, "reason": "Model turn budget reached before verification completed"}}
+				continue
+			}
+			if !parallelReads {
+				results[i] = r.tool(ctx, phase, call)
+				continue
+			}
+			group.Add(1)
+			go func(index int, item object) {
+				defer group.Done()
+				results[index] = r.tool(ctx, phase, item)
+			}(i, call)
+		}
+		group.Wait()
+		body = object{"requestId": uuid(), "state": response["state"], "results": results}
 	}
 	return report, errors.New("reporting agent exceeded its turn limit")
 }

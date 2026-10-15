@@ -3,6 +3,7 @@ package verify
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -247,6 +248,119 @@ func TestNonInteractiveRunFinishesWithNeedsReviewReport(t *testing.T) {
 	var parsed object
 	if json.Unmarshal(b, &parsed) != nil || parsed["verdict"] != "needs_review" {
 		t.Fatal("report not persisted")
+	}
+	workspaces := obj(report["workspaces"])
+	for _, key := range []string{"baseline", "candidate"} {
+		_, _ = git(root, nil, "worktree", "remove", "--force", str(workspaces[key]))
+	}
+	_ = os.RemoveAll(filepath.Dir(str(report["reportPath"])))
+}
+func TestProposedEditDisplaysTheActualDiff(t *testing.T) {
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := os.Stderr
+	os.Stderr = write
+	printFileDiff("sample.txt", []byte("before\n"), []byte("after\n"), false)
+	_ = write.Close()
+	os.Stderr = previous
+	output, err := io.ReadAll(read)
+	_ = read.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(output), "-before") || !strings.Contains(string(output), "+after") {
+		t.Fatalf("approval preview omitted the edit: %s", output)
+	}
+}
+func TestGroupedReadsAndUsageAreRecorded(t *testing.T) {
+	root := fixture(t)
+	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
+	old := requestService
+	defer func() { requestService = old }()
+	step := 0
+	requestService = func(_ context.Context, body object) (object, error) {
+		step++
+		if step == 1 {
+			return object{
+				"phase": "baseline", "state": "opaque",
+				"usage": object{"inputTokens": 100, "outputTokens": 20, "cacheReadTokens": 50, "cacheWriteTokens": 10, "providerUsd": "0.001000000"},
+				"content": []any{
+					object{"id": "a", "name": "read_file", "input": object{"path": "calc.cjs"}},
+					object{"id": "b", "name": "read_file", "input": object{"path": ".gitignore"}},
+				},
+			}, nil
+		}
+		results := body["results"].([]object)
+		if len(results) != 2 || !strings.Contains(str(obj(results[0]["value"])["content"]), "x + 1") || !strings.Contains(str(obj(results[1]["value"])["content"]), "node_modules") {
+			t.Fatalf("grouped reads returned out of order: %v", results)
+		}
+		return object{"phase": "done", "verdict": "needs_review", "report": "Read complete"}, nil
+	}
+	report, err := verify(context.Background(), options{Repo: root, Base: "main", NonInteractive: true, MaxTurns: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage := obj(report["usage"])
+	if num(usage["modelTurns"]) != 1 || num(usage["cacheReadTokens"]) != 50 || usage["estimatedProviderUsd"] != 0.001 {
+		t.Fatalf("usage was not recorded: %v", usage)
+	}
+	workspaces := obj(report["workspaces"])
+	for _, key := range []string{"baseline", "candidate"} {
+		_, _ = git(root, nil, "worktree", "remove", "--force", str(workspaces[key]))
+	}
+	_ = os.RemoveAll(filepath.Dir(str(report["reportPath"])))
+}
+func TestTextOnlyAgentTurnContinues(t *testing.T) {
+	root := fixture(t)
+	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
+	old := requestService
+	defer func() { requestService = old }()
+	step := 0
+	requestService = func(_ context.Context, body object) (object, error) {
+		step++
+		if step == 1 {
+			return object{"phase": "baseline", "state": "opaque", "content": []any{}}, nil
+		}
+		if results, ok := body["results"].([]object); !ok || len(results) != 0 {
+			t.Fatalf("empty tool turn was not acknowledged: %v", body["results"])
+		}
+		return object{"phase": "done", "verdict": "not_ready", "report": "Agent stopped"}, nil
+	}
+	report, err := verify(context.Background(), options{Repo: root, Base: "main", NonInteractive: true, MaxTurns: 10})
+	if err != nil || step != 2 {
+		t.Fatalf("text-only turn stopped the run: %v, steps %d", err, step)
+	}
+	workspaces := obj(report["workspaces"])
+	for _, key := range []string{"baseline", "candidate"} {
+		_, _ = git(root, nil, "worktree", "remove", "--force", str(workspaces[key]))
+	}
+	_ = os.RemoveAll(filepath.Dir(str(report["reportPath"])))
+}
+func TestMixedToolGroupRunsInOrder(t *testing.T) {
+	root := fixture(t)
+	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
+	old := requestService
+	defer func() { requestService = old }()
+	step := 0
+	requestService = func(_ context.Context, body object) (object, error) {
+		step++
+		if step == 1 {
+			return object{"phase": "baseline", "state": "opaque", "content": []any{
+				object{"id": "write", "name": "run_command", "input": object{"command": "printf staged > GroupedTests.java", "purpose": "Create test", "timeoutSeconds": 5}},
+				object{"id": "read", "name": "read_file", "input": object{"path": "GroupedTests.java"}},
+			}}, nil
+		}
+		results := body["results"].([]object)
+		if len(results) != 2 || str(obj(results[1]["value"])["content"]) != "staged" {
+			t.Fatalf("mixed tools ran out of order: %v", results)
+		}
+		return object{"phase": "done", "verdict": "not_ready", "report": "Inspection complete"}, nil
+	}
+	report, err := verify(context.Background(), options{Repo: root, Base: "main", NonInteractive: true, MaxTurns: 10})
+	if err != nil || step != 2 {
+		t.Fatalf("mixed group failed: %v, steps %d", err, step)
 	}
 	workspaces := obj(report["workspaces"])
 	for _, key := range []string{"baseline", "candidate"} {
