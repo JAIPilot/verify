@@ -73,7 +73,11 @@ func (u *terminalUI) choose(question string, options []string, comment bool) (st
 		}
 	}
 	fmt.Fprintln(u.out, u.paint("36", "╰"+strings.Repeat("─", 58)))
+	yesNo := len(options) == 2 && strings.EqualFold(strings.TrimSpace(options[0]), "yes") && strings.EqualFold(strings.TrimSpace(options[1]), "no")
 	prompt := "Choose 1–" + strconv.Itoa(len(options))
+	if yesNo {
+		prompt += " (y/n)"
+	}
 	if comment {
 		prompt += " or type a comment"
 	}
@@ -89,6 +93,16 @@ func (u *terminalUI) choose(question string, options []string, comment bool) (st
 		if parseErr == nil && choice >= 1 && choice <= len(options) {
 			fmt.Fprintln(u.out, u.paint("32", "  ✓")+" "+options[choice-1])
 			return options[choice-1], true
+		}
+		if yesNo {
+			switch strings.ToLower(answer) {
+			case "y", "yes":
+				fmt.Fprintln(u.out, u.paint("32", "  ✓")+" Yes")
+				return options[0], true
+			case "n", "no":
+				fmt.Fprintln(u.out, u.paint("32", "  ✓")+" No")
+				return options[1], true
+			}
 		}
 		if comment && answer != "" && parseErr != nil {
 			fmt.Fprintln(u.out, u.paint("32", "  ✓")+" Comment sent")

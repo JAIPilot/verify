@@ -482,11 +482,11 @@ func (r *runner) approveEdit() (string, bool) {
 	}
 }
 func (r *runner) approveReview() (string, bool) {
-	answer, ok := r.askChoice("Is this complete candidate ready for final testing?", []string{"Accept and run final tests", "Revise the candidate"}, true)
+	answer, ok := r.askChoice("Accept this complete candidate and run final tests?", []string{"Yes", "No"}, true)
 	switch answer {
-	case "Accept and run final tests":
+	case "Yes":
 		return "yes", ok
-	case "Revise the candidate":
+	case "No":
 		return "Please revise the candidate. Ask me a focused question with options if you need direction.", ok
 	default:
 		return answer, ok

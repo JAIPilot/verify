@@ -30,6 +30,16 @@ func TestQuestionChoicesAndComment(t *testing.T) {
 	if _, ok = u.choose("Intended?", []string{"Yes", "No"}, true); ok {
 		t.Fatal("EOF accepted an answer")
 	}
+	for _, tc := range []struct{ input, want string }{{"y\n", "Yes"}, {"yes\n", "Yes"}, {"N\n", "No"}, {"NO\n", "No"}} {
+		output.Reset()
+		u = newTerminalUI(strings.NewReader(tc.input), &output)
+		if answer, ok = u.choose("Keep the change?", []string{"Yes", "No"}, true); !ok || answer != tc.want {
+			t.Fatalf("binary answer %q = %q, %v", tc.input, answer, ok)
+		}
+		if !strings.Contains(output.String(), "(y/n)") {
+			t.Fatal("binary shortcut was not shown")
+		}
+	}
 	output.Reset()
 	u = newTerminalUI(strings.NewReader("Please revise\n2\n"), &output)
 	if answer, ok = u.choose("Apply?", []string{"Apply", "Leave"}, false); !ok || answer != "Leave" {
@@ -82,5 +92,8 @@ func TestReviewMenusMapChoicesToClearFeedback(t *testing.T) {
 	r.AskChoice = func(_ string, offered []string, _ bool) (string, bool) { return offered[0], true }
 	if answer, ok = r.approveEdit(); !ok || answer != "yes" {
 		t.Fatalf("acceptance: %q, %v", answer, ok)
+	}
+	if answer, ok = r.approveReview(); !ok || answer != "yes" {
+		t.Fatalf("review acceptance: %q, %v", answer, ok)
 	}
 }

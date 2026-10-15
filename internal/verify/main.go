@@ -288,8 +288,8 @@ func verify(ctx context.Context, o options) (report object, err error) {
 				if e != nil {
 					return report, e
 				}
-				answer, ok := r.askChoice("Apply these verified changes to your checkout?", []string{"Apply to my checkout", "Keep in review workspace"}, false)
-				if ok && answer == "Apply to my checkout" {
+				answer, ok := r.askChoice("Apply these verified changes to your checkout?", []string{"Yes", "No"}, false)
+				if ok && answer == "Yes" {
 					after, e := snapshot(w.Candidate, w.Known)
 					if e != nil {
 						return report, e
