@@ -3,7 +3,6 @@ package verify
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -338,22 +337,24 @@ func TestLargeDiffIsInspectedThroughToolsInsteadOfRejected(t *testing.T) {
 	_ = os.RemoveAll(filepath.Dir(str(report["reportPath"])))
 }
 func TestProposedEditDisplaysTheActualDiff(t *testing.T) {
-	read, write, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	previous := os.Stderr
-	os.Stderr = write
-	printFileDiff("sample.txt", []byte("before\n"), []byte("after\n"), false)
-	_ = write.Close()
-	os.Stderr = previous
-	output, err := io.ReadAll(read)
-	_ = read.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(output), "-before") || !strings.Contains(string(output), "+after") {
+	output := fileDiff([]byte("before\n"), []byte("after\n"), false)
+	if !strings.Contains(output, "-before") || !strings.Contains(output, "+after") {
 		t.Fatalf("approval preview omitted the edit: %s", output)
+	}
+}
+func TestAgentQuestionPresentsOptionsAndReturnsSelection(t *testing.T) {
+	root := fixture(t)
+	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
+	r := setupRunner(t, root)
+	r.AskChoice = func(question string, choices []string, comment bool) (string, bool) {
+		if question != "Should null stay an error?" || !comment || len(choices) != 2 || choices[0] != "Preserve the error" {
+			t.Fatalf("wrong menu: %q, %v, %v", question, choices, comment)
+		}
+		return choices[0], true
+	}
+	result, err := r.run(context.Background(), "review", "ask_user", object{"question": "Should null stay an error?", "options": []any{"Preserve the error", "Return an empty result"}})
+	if err != nil || result["answer"] != "Preserve the error" {
+		t.Fatalf("wrong answer: %v, %v", result, err)
 	}
 }
 func TestGroupedReadsAndUsageAreRecorded(t *testing.T) {

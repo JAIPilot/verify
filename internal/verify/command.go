@@ -3,7 +3,6 @@ package verify
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -69,7 +68,7 @@ func runCommand(ctx context.Context, root string, in object) (CommandResult, err
 	if purpose == "" {
 		purpose = "task"
 	}
-	fmt.Fprintf(os.Stderr, "JAIPilot: %s…\n", purpose)
+	newTerminalUI(os.Stdin, os.Stderr).activity(purpose + "…")
 	started := time.Now()
 	cmd := shellCommand(root, command)
 	out, stderr := &tailWriter{}, &tailWriter{}

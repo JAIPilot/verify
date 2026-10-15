@@ -17,6 +17,8 @@ type runner struct {
 	mu                         sync.Mutex
 	W                          *workspace
 	Ask                        func(string) (string, bool)
+	AskChoice                  func(string, []string, bool) (string, bool)
+	UI                         *terminalUI
 	BaselineOriginal, Accepted tree
 	Frozen                     tree
 	BaselineTest               object
@@ -115,9 +117,8 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 			return nil, errors.New("full-file edit exceeds 512 KiB; use edit_file for exact changes in existing files")
 		}
 		if phase == "review" {
-			fmt.Fprintf(os.Stderr, "\nProposed edit: %s\n%s\n", rel, str(in["explanation"]))
-			printFileDiff(rel, old, []byte(content), deleting)
-			answer, ok := r.Ask("Accept this edit? [y/N, or give feedback]")
+			r.ui().preview("Proposed edit · "+rel, str(in["explanation"]), fileDiff(old, []byte(content), deleting))
+			answer, ok := r.approveEdit()
 			if !ok {
 				return object{"needsReview": true, "reason": "User approval is required for proposed edits"}, nil
 			}
@@ -158,9 +159,8 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 		}
 		updated := bytes.Replace(old, before, after, 1)
 		if phase == "review" {
-			fmt.Fprintf(os.Stderr, "\nProposed edit: %s\n%s\n", rel, str(in["explanation"]))
-			printFileDiff(rel, old, updated, false)
-			answer, ok := r.Ask("Accept this edit? [y/N, or give feedback]")
+			r.ui().preview("Proposed edit · "+rel, str(in["explanation"]), fileDiff(old, updated, false))
+			answer, ok := r.approveEdit()
 			if !ok {
 				return object{"needsReview": true, "reason": "User approval is required for proposed edits"}, nil
 			}
@@ -333,7 +333,16 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 		}
 		return object{"kind": "replay", "baselineRevision": revision, "existingTests": originalTests, "characterizationTests": result, "frozenFiles": r.Frozen, "exitCode": exitCode}, nil
 	case "ask_user":
-		answer, ok := r.Ask(str(in["question"]))
+		choices := []string{}
+		for _, option := range list(in["options"]) {
+			if value := strings.TrimSpace(str(option)); value != "" {
+				choices = append(choices, value)
+			}
+		}
+		if len(choices) < 2 || len(choices) > 4 {
+			return object{"needsReview": true, "reason": "The agent must provide two to four answer options"}, nil
+		}
+		answer, ok := r.askChoice(str(in["question"]), choices, true)
 		if !ok {
 			return object{"needsReview": true, "reason": "Intent clarification needs user input"}, nil
 		}
@@ -348,12 +357,12 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 			if err != nil {
 				return nil, err
 			}
-			fmt.Fprintln(os.Stderr, "\nReview the complete candidate diff:\n"+preview+"\n"+str(in["summary"]))
+			r.ui().preview("Review the complete candidate diff", str(in["summary"]), preview)
 			before, err := snapshot(root, r.W.Known)
 			if err != nil {
 				return nil, err
 			}
-			answer, ok := r.Ask("Accept this code and its behavior for the final testing stage? [y/N, or give feedback]")
+			answer, ok := r.approveReview()
 			if !ok {
 				return object{"needsReview": true, "reason": "Stage 2 requires explicit user acceptance"}, nil
 			}
@@ -433,7 +442,7 @@ func (r *runner) tool(ctx context.Context, phase string, call object) object {
 	if err != nil {
 		out["isError"] = true
 		result["error"] = err.Error()
-		fmt.Fprintln(os.Stderr, "Verify:", err)
+		r.ui().problem(err.Error())
 	}
 	r.mu.Lock()
 	r.Events = append(r.Events, object{"phase": phase, "tool": name, "input": obj(call["input"]), "result": out})
@@ -444,12 +453,50 @@ func yes(s string) bool {
 	s = strings.ToLower(strings.TrimSpace(s))
 	return s == "y" || s == "yes" || s == "accept"
 }
-func printFileDiff(path string, old, new []byte, deleting bool) {
+func (r *runner) ui() *terminalUI {
+	if r.UI != nil {
+		return r.UI
+	}
+	return newTerminalUI(os.Stdin, os.Stderr)
+}
+func (r *runner) askChoice(question string, options []string, comment bool) (string, bool) {
+	if r.AskChoice != nil {
+		return r.AskChoice(question, options, comment)
+	}
+	if r.Ask != nil {
+		return r.Ask(question)
+	}
+	return "", false
+}
+func (r *runner) approveEdit() (string, bool) {
+	answer, ok := r.askChoice("What should happen to this edit?", []string{"Apply this edit", "Revise this edit", "Skip this edit"}, true)
+	switch answer {
+	case "Apply this edit":
+		return "yes", ok
+	case "Revise this edit":
+		return "Please propose a different edit. Ask me a focused question with options if you need direction.", ok
+	case "Skip this edit":
+		return "Do not apply this edit. Continue with the remaining changes.", ok
+	default:
+		return answer, ok
+	}
+}
+func (r *runner) approveReview() (string, bool) {
+	answer, ok := r.askChoice("Is this complete candidate ready for final testing?", []string{"Accept and run final tests", "Revise the candidate"}, true)
+	switch answer {
+	case "Accept and run final tests":
+		return "yes", ok
+	case "Revise the candidate":
+		return "Please revise the candidate. Ask me a focused question with options if you need direction.", ok
+	default:
+		return answer, ok
+	}
+}
+func fileDiff(old, new []byte, deleting bool) string {
 	// git's no-index diff handles normal contextual diffs without changing either worktree.
 	dir, err := os.MkdirTemp("", "verify-preview-")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, string(new))
-		return
+		return string(new)
 	}
 	defer os.RemoveAll(dir)
 	_ = os.WriteFile(filepath.Join(dir, "before"), old, 0600)
@@ -457,16 +504,13 @@ func printFileDiff(path string, old, new []byte, deleting bool) {
 	command := exec.Command("git", "-c", "core.quotePath=false", "diff", "--no-index", "--no-ext-diff", "--", "before", "after")
 	command.Dir = dir
 	b, err := command.Output()
-	fmt.Fprintln(os.Stderr, "File:", path)
-	if deleting {
-		fmt.Fprintln(os.Stderr, "Delete file")
-	}
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
-			fmt.Fprintln(os.Stderr, "Could not render diff; proposed file follows:")
-			fmt.Fprintln(os.Stderr, string(new))
-			return
+			return "Could not render diff; proposed file follows:\n" + string(new)
 		}
 	}
-	fmt.Fprintln(os.Stderr, string(b))
+	if deleting {
+		return "Delete file\n" + string(b)
+	}
+	return string(b)
 }

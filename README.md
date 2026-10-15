@@ -34,6 +34,7 @@ Verify shares your JAIPilot sign-in. It runs your project's tests locally, so Gi
 4. **Get the report.** A separate reporting agent explains the evidence, decisions, blockers, and final verdict.
 
 Verify shows you the complete tested diff before offering to apply it. A passing report requires fresh evidence for the affected files; missing coverage or surviving mutants appear as blockers.
+Questions and edit reviews use numbered choices, with an option to add your own comment.
 
 ```sh
 verify --repo /path/to/project --base origin/main

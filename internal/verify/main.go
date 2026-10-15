@@ -1,7 +1,6 @@
 package verify
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -70,18 +69,24 @@ func Main(args []string) int {
 	}
 	report, err := verify(ctx, o)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Verify:", err)
+		newTerminalUI(os.Stdin, os.Stderr).problem(err.Error())
 	}
 	if report != nil {
 		if o.JSON {
 			fmt.Println(jsonText(report))
 		} else {
-			fmt.Println(str(report["report"]))
-			fmt.Fprintln(os.Stderr, "Report:", str(report["reportPath"]))
+			output := newTerminalUI(os.Stdin, os.Stdout)
+			if output.terminal {
+				output.report(str(report["report"]))
+			} else {
+				fmt.Println(str(report["report"]))
+			}
+			status := newTerminalUI(os.Stdin, os.Stderr)
+			status.note("Report", str(report["reportPath"]))
 			if u, ok := report["usage"].(map[string]any); ok {
 				cost, _ := u["estimatedProviderUsd"].(float64)
 				elapsed, _ := report["durationMs"].(int64)
-				fmt.Fprintf(os.Stderr, "Verify: %s · %d model turns · $%.4f estimated provider cost\n", (time.Duration(elapsed) * time.Millisecond).Round(time.Second), num(u["modelTurns"]), cost)
+				status.note("Usage", fmt.Sprintf("%s  ·  %d model turns  ·  $%.4f estimated provider cost", (time.Duration(elapsed)*time.Millisecond).Round(time.Second), num(u["modelTurns"]), cost))
 			}
 		}
 	}
@@ -176,7 +181,7 @@ func service(ctx context.Context, body object) (object, error) {
 		if delay > 15*time.Second {
 			delay = 15 * time.Second
 		}
-		fmt.Fprintln(os.Stderr, "Verify: waiting for the JAIPilot service…")
+		newTerminalUI(os.Stdin, os.Stderr).activity("Waiting for the JAIPilot service…")
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
@@ -201,17 +206,13 @@ func verify(ctx context.Context, o options) (report object, err error) {
 	if err != nil {
 		return nil, err
 	}
-	input := bufio.NewReader(os.Stdin)
-	r.Ask = func(question string) (string, bool) {
+	u := newTerminalUI(os.Stdin, os.Stderr)
+	r.UI = u
+	r.AskChoice = func(question string, choices []string, comment bool) (string, bool) {
 		if o.NonInteractive {
 			return "", false
 		}
-		fmt.Fprintln(os.Stderr, "\n"+question)
-		answer, e := input.ReadString('\n')
-		if e != nil {
-			return "", false
-		}
-		return strings.TrimSpace(answer), true
+		return u.choose(question, choices, comment)
 	}
 	usage := object{"modelTurns": 0, "inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0, "estimatedProviderUsd": 0.0}
 	report = object{"version": 1, "verdict": "not_ready", "base": w.Base, "repository": w.Root, "baselineScope": w.BaselineScope, "finalScope": w.FinalScope, "workspaces": object{"baseline": w.Baseline, "candidate": w.Candidate}, "reportPath": filepath.Join(w.RunDir, "report.json"), "applied": false, "usage": usage}
@@ -255,9 +256,9 @@ func verify(ctx context.Context, o options) (report object, err error) {
 		}
 		phase := str(response["phase"])
 		if phase != lastPhase {
-			labels := map[string]string{"baseline": "1/4 Characterize the baseline", "review": "2/4 Review intent and edits", "lock": "3/4 Lock accepted behavior", "report": "4/4 Prepare the report"}
-			if label := labels[phase]; label != "" {
-				fmt.Fprintln(os.Stderr, "\nVerify:", label)
+			labels := map[string][2]string{"baseline": {"1", "Characterize the baseline"}, "review": {"2", "Review intent and edits"}, "lock": {"3", "Lock accepted behavior"}, "report": {"4", "Prepare the report"}}
+			if label, ok := labels[phase]; ok {
+				u.stage(label[0], label[1])
 			}
 			lastPhase = phase
 		}
@@ -282,13 +283,13 @@ func verify(ctx context.Context, o options) (report object, err error) {
 				if e != nil {
 					return report, e
 				}
-				fmt.Fprintln(os.Stderr, "\nFinal verified diff:\n"+preview)
+				u.preview("Final verified diff", "", preview)
 				before, e := snapshot(w.Candidate, w.Known)
 				if e != nil {
 					return report, e
 				}
-				answer, ok := r.Ask("Apply these verified changes to your checkout? [y/N]")
-				if ok && yes(answer) {
+				answer, ok := r.askChoice("Apply these verified changes to your checkout?", []string{"Apply to my checkout", "Keep in review workspace"}, false)
+				if ok && answer == "Apply to my checkout" {
 					after, e := snapshot(w.Candidate, w.Known)
 					if e != nil {
 						return report, e
