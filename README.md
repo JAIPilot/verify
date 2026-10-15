@@ -16,10 +16,9 @@ Verify is an open-source CLI from [JAIPilot](https://www.jaipilot.com/) that che
 
 ## Get started
 
-Install [Go 1.26.2+](https://go.dev/dl/), then run:
+Download the archive for your system from the [v0.1.0 release](https://github.com/JAIPilot/verify/releases/tag/v0.1.0), extract it, and put `verify` on your PATH. Then run:
 
 ```sh
-go install github.com/JAIPilot/verify/cmd/verify@main
 verify auth login
 cd your-project
 verify --base main
