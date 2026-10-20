@@ -2,7 +2,7 @@
   <img src="assets/jaipilot-logo.svg" alt="JAIPilot" width="88" height="88">
 </p>
 
-<h1 align="center">Verify your change before you ship it</h1>
+<h1 align="center">Verify your code before you ship it</h1>
 
 <p align="center">
   <strong>A testing agent that verifies your code.</strong><br>
