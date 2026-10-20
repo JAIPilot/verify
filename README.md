@@ -18,7 +18,7 @@
 
 ## What Verify does
 
-1. **Run Verify after a code change is made.** It examines new code and edits to existing code.
+1. **Run Verify before you commit.** Once your code change is ready, Verify examines new code and edits to existing code.
 2. **Check for regressions.** Verify tests affected behavior before your change, then runs those tests on the changed code to spot regressions.
 3. **Decide what should happen.** Verify asks about unclear behavior and shows proposed code or test edits for your approval.
 4. **Test the new code.** Verify adds tests for the agreed behavior, runs the project suite and coverage checks, and reports the result before you apply the verified diff.
