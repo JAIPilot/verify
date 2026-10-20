@@ -5,8 +5,8 @@
 <h1 align="center">Verify your change before you ship it</h1>
 
 <p align="center">
-  <strong>A testing agent for code changes:<br>
-  lock existing behavior, review intent, and verify the result.</strong>
+  <strong>A testing agent that verifies your code.</strong><br>
+  Tests your new code and checks existing behavior for regressions.
 </p>
 
 <p align="center">
