@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/JAIPilot/verify/releases/latest">Download Verify</a> ·
-  <a href="#get-started">Get started</a> ·
+  <a href="#install">Install</a> ·
   <a href="#how-verify-works">How it works</a> ·
   <a href="https://www.jaipilot.com/">JAIPilot.com</a>
 </p>
@@ -46,24 +46,30 @@ Verify found an untested missing-target case. During review, we confirmed that i
 
 Verify uses separate Git worktrees for the baseline and candidate, so your checkout stays in place while it works. It shows proposed edits before acceptance and the complete verified diff before promotion. A passing verdict requires fresh test and coverage evidence for affected files. [Read the detailed workflow.](docs/how-it-works.md)
 
-## Get started
+## Install
 
-Download the archive for your system from the [latest release](https://github.com/JAIPilot/verify/releases/latest), extract it, and put `verify` on your `PATH`. Then, inside your project:
+**macOS / Linux**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/JAIPilot/verify/main/install.sh | sh
+```
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/JAIPilot/verify/main/install.ps1 | iex
+```
+
+The installers download the latest release for your system and check its SHA-256 checksum. On macOS and Linux, `verify` goes into `~/.local/bin`; the installer tells you how to add it to `PATH` if needed. On Windows, it adds `%LOCALAPPDATA%\JAIPilot\bin` to your user `PATH`; open a new terminal afterward. Check the install with `verify --version`, or [download an archive manually](https://github.com/JAIPilot/verify/releases/latest).
+
+**Run it in the Git repository containing your changes:**
 
 ```sh
 verify auth login
-verify --base main
+verify
 ```
 
-Verify shares your JAIPilot sign-in. It runs builds and tests locally with your project's tools; have Git, the project toolchain, and compatible coverage tooling configured. If your default branch is not `main`, use its ref with `--base`, or omit the flag to let Verify find a baseline.
-
-```sh
-verify --repo /path/to/project --base origin/main
-verify --json --report ./verify-report.json
-verify --non-interactive --json
-```
-
-Answer yes/no prompts with `y` or `n`. Other reviews accept a numbered choice or a comment typed directly. Noninteractive runs stop with `needs_review` when your decision is required.
+Verify uses your JAIPilot sign-in and your project's local build, test, and coverage tools. Have Git and that project toolchain installed before running it.
 
 ## What you get
 
