@@ -2,15 +2,15 @@
 
 This guide explains the workflow and evidence behind [Verify](../README.md). Builds and tests run locally; three Claude agents work through JAIPilot's managed backend.
 
-If you are already signed in with `jaipilot`, Verify uses the same session. `verify auth logout` signs out that shared session. Git, a working project toolchain, and configured test, coverage, and mutation tools are required. Go 1.26.2 or later is needed when installing from source.
+If you are already signed in with `jaipilot`, Verify uses the same session. `verify auth logout` signs out that shared session. Git, a working project toolchain, and configured test and coverage tools are required. Go 1.26.2 or later is needed when installing from source.
 
 ## Four stages, three agents
 
 | Stage | Agent | What happens |
 | --- | --- | --- |
-| 1. Establish the baseline | Tester | Start at the merge-base before your changes. Add characterization tests in new files. Run tests, require 100% measured coverage and mutation score for affected existing source files, then run the candidate's full existing suite and replay the same frozen tests against your diff. Review the diff alongside passing and failing results. |
+| 1. Establish the baseline | Tester | Start at the merge-base before your changes. Add characterization tests in new files. Run tests, require 100% measured coverage for affected existing source files, then run the candidate's full existing suite and replay the same frozen tests against your diff. Review the diff alongside passing and failing results. |
 | 2. Review intent and edits | Reviewer | Clarify intended behavior only when the evidence leaves a decision open, distinguish regressions from intentional changes, propose code and test edits, and get your approval. You explicitly accept the complete candidate diff before continuing. |
-| 3. Lock the accepted behavior | The same tester | Keep accepted production code frozen. Add or update characterization tests for the new behavior. Require fresh passing tests, 100% measured coverage, and 100% mutation score for the final affected source files. |
+| 3. Lock the accepted behavior | The same tester | Keep accepted production code frozen. Add or update characterization tests for the new behavior. Require fresh passing tests and 100% measured coverage for the final affected source files. |
 | 4. Report | Separate, simpler reporter | Explain the baseline, replay results, decisions, edits, final evidence, blockers, and verdict. This agent has no shell or edit tools. |
 
 The testing and review agents use Claude Sonnet. Reporting uses Claude Haiku with a smaller context and output task. Agent prompts, conversation routing, stage gates, auth checks, and usage accounting live in the JAIPilot backend. The CLI handles Git worktrees, local execution, native report parsing, approvals, and final promotion.
@@ -36,15 +36,14 @@ Native report adapters:
 | Evidence | Supported formats |
 | --- | --- |
 | Coverage | Istanbul JSON, LCOV, JaCoCo XML, Cobertura XML |
-| Mutation | Stryker JSON, PIT XML |
 
-The agent selects commands appropriate to your project. Existing project instructions can document those commands and report paths. A successful measurement must regenerate its report; stale report files are removed first. Every scoped file must have nonempty primary counters. All measured lines or statements and branches must be covered; all valid generated mutants must be killed. Surviving, ignored, uncovered, errored, and timed-out mutants do not count as killed. Noncompiling/nonviable mutants are excluded and recorded in the evidence.
+The agent selects commands appropriate to your project. Existing project instructions can document those commands and report paths. A successful measurement must regenerate its report; stale report files are removed first. Every scoped file must have nonempty primary counters. All measured lines or statements and reported branches must be covered.
 
 Evidence commands run directly without shell pipes or chaining, so their exit status belongs to the test or build tool. Verify captures and limits command output itself.
 
-Some formats do not contain branch counters. That limitation is reported; Verify does not infer branch coverage. A project without compatible tooling gets a blocker report. Unsupported languages, equivalent surviving mutants, code without viable mutants, and unreachable code can prevent a 100% result. There is no automatic lowering of thresholds or acceptance of a model-written score. Passing tests and mutation checks protect the behavior exercised; they do not prove that a change is bug-free.
+Some formats do not contain branch counters. That limitation is reported; Verify does not infer branch coverage. A project without compatible tooling gets a blocker report. Unsupported languages and unreachable code can prevent a 100% result. There is no automatic lowering of thresholds or acceptance of a model-written score. Passing tests and coverage checks protect the behavior exercised; they do not prove that a change is bug-free.
 
-For a Node project, for example, configure [c8](https://github.com/bcoe/c8) to write Istanbul `coverage/coverage-final.json` and [Stryker](https://stryker-mutator.io/docs/stryker-js/configuration/) to write `reports/mutation/mutation.json`. For Java, configure JaCoCo and PIT. Install/configure tooling before verification: baseline production files and build configuration are immutable.
+For a Node project, for example, configure [c8](https://github.com/bcoe/c8) to write Istanbul `coverage/coverage-final.json`. For Java, configure JaCoCo to write `target/site/jacoco/jacoco.xml`. Install/configure tooling before verification: baseline production files and build configuration are immutable.
 
 ## Reports and exit codes
 

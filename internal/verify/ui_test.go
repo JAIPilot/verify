@@ -67,7 +67,7 @@ func TestReviewAndReportFormatting(t *testing.T) {
 		t.Fatal("plain output contains ANSI escapes")
 	}
 	output.Reset()
-	u.report("## Report\n\n**Verdict:** `good_to_go`\n\n| Metric | Command | Result |\n| --- | --- | --- |\n| Mutation | `./mvnw org.pitest:pitest-maven:mutationCoverage -DtargetClasses=org.springframework.samples.petclinic.model.NamedEntity -DtimestampedReports=false` | 3/3 killed |")
+	u.report("## Report\n\n**Verdict:** `good_to_go`\n\n| Metric | Command | Result |\n| --- | --- | --- |\n| Coverage | `./mvnw -q -Dtest=org.springframework.samples.petclinic.model.NamedEntityTest test jacoco:report -Djacoco.includes=org/springframework/samples/petclinic/model/NamedEntity.class` | 12/12 lines covered |")
 	if got := output.String(); !strings.Contains(got, "VERDICT  good to go") || !strings.Contains(got, "Command:") || strings.Contains(got, "┌") {
 		t.Fatalf("long table was not rendered for terminal width: %s", got)
 	}

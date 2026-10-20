@@ -176,7 +176,7 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 		return object{"accepted": err == nil, "path": rel}, err
 	case "measure":
 		kind := str(in["kind"])
-		if kind != "tests" && kind != "coverage" && kind != "mutation" {
+		if kind != "tests" && kind != "coverage" {
 			return nil, errors.New("invalid measurement kind")
 		}
 		if err := directEvidenceCommand(str(in["command"])); err != nil {
@@ -233,12 +233,6 @@ func (r *runner) run(ctx context.Context, phase, name string, in object) (object
 			return out, errors.New("native report exceeds 32 MiB")
 		}
 		format := str(in["format"])
-		if kind == "mutation" && format != "pit" && format != "stryker" {
-			return out, errors.New("mutation measurement requires pit or stryker")
-		}
-		if kind == "coverage" && (format == "pit" || format == "stryker") {
-			return out, errors.New("coverage measurement requires a coverage format")
-		}
 		m, err := parseMetrics(data, format, root, scope)
 		if err != nil {
 			return out, err

@@ -254,66 +254,6 @@ func parseMetrics(data []byte, format, root string, scope []string) (metrics, er
 				m.Notes = append(m.Notes, f.Filename+": no branch counters reported")
 			}
 		}
-	case "stryker":
-		var report struct {
-			Files map[string]struct {
-				Mutants []struct {
-					Status string `json:"status"`
-				} `json:"mutants"`
-			} `json:"files"`
-		}
-		if err := json.Unmarshal(data, &report); err != nil {
-			return m, err
-		}
-		for name, f := range report.Files {
-			c, t := 0, 0
-			for _, mutant := range f.Mutants {
-				if mutant.Status == "CompileError" {
-					m.Notes = append(m.Notes, name+": noncompiling mutant excluded")
-					continue
-				}
-				t++
-				if mutant.Status == "Killed" {
-					c++
-				}
-			}
-			if err := add(name, "mutants", c, t); err != nil {
-				return m, err
-			}
-		}
-	case "pit":
-		var report struct {
-			Mutants []struct {
-				Status string `xml:"status,attr"`
-				Source string `xml:"sourceFile"`
-				Class  string `xml:"mutatedClass"`
-			} `xml:"mutation"`
-		}
-		if err := xml.Unmarshal(data, &report); err != nil {
-			return m, err
-		}
-		counts := map[string][2]int{}
-		for _, v := range report.Mutants {
-			name := v.Source
-			if i := strings.LastIndex(v.Class, "."); i >= 0 {
-				name = strings.ReplaceAll(v.Class[:i], ".", "/") + "/" + name
-			}
-			if v.Status == "NON_VIABLE" {
-				m.Notes = append(m.Notes, name+": nonviable mutant excluded")
-				continue
-			}
-			n := counts[name]
-			n[1]++
-			if v.Status == "KILLED" {
-				n[0]++
-			}
-			counts[name] = n
-		}
-		for name, n := range counts {
-			if err := add(name, "mutants", n[0], n[1]); err != nil {
-				return m, err
-			}
-		}
 	default:
 		return m, fmt.Errorf("unsupported native report format %q", format)
 	}
@@ -324,12 +264,12 @@ func parseMetrics(data []byte, format, root string, scope []string) (metrics, er
 		}
 		primary := false
 		for _, c := range m.Counters {
-			if c.File == p && (c.Metric == "lines" || c.Metric == "line" || c.Metric == "statements" || c.Metric == "mutants") {
+			if c.File == p && (c.Metric == "lines" || c.Metric == "line" || c.Metric == "statements") {
 				primary = true
 			}
 		}
 		if !primary {
-			return m, fmt.Errorf("report is missing primary coverage/mutation counters for %s", p)
+			return m, fmt.Errorf("report is missing primary coverage counters for %s", p)
 		}
 	}
 	if len(scope) > 0 && len(m.Counters) == 0 {

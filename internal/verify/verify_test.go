@@ -165,7 +165,7 @@ func TestEditsRequireAcceptanceAndCommandsCannotChangeSource(t *testing.T) {
 	}
 	result := r.tool(context.Background(), "review", object{"id": "unsafe", "name": "run_command", "input": object{"command": "echo forbidden > calc.cjs", "timeoutSeconds": 10}})
 	if obj(result["value"])["needsReview"] != true || result["isError"] != true {
-		t.Fatalf("source mutation not stopped: %v", result)
+		t.Fatalf("source edit not stopped: %v", result)
 	}
 	b, _ = os.ReadFile(filepath.Join(root, "calc.cjs"))
 	if !strings.Contains(string(b), "x + 2") {
@@ -227,8 +227,6 @@ func TestNativeReportParsers(t *testing.T) {
 		{"lcov", "SF:src/a.js\nDA:1,1\nDA:2,0\nBRDA:1,0,0,1\nBRDA:1,0,1,-\nend_of_record\n", "src/a.js", 1, 2},
 		{"jacoco", `<report><package name="com/acme"><sourcefile name="A.java"><counter type="LINE" missed="1" covered="1"/><counter type="BRANCH" missed="1" covered="1"/></sourcefile></package></report>`, "src/main/java/com/acme/A.java", 1, 2},
 		{"cobertura", `<coverage><packages><package><classes><class filename="src/a.py"><lines><line hits="1" branch="true" condition-coverage="50% (1/2)"/><line hits="0"/></lines></class></classes></package></packages></coverage>`, "src/a.py", 1, 2},
-		{"stryker", `{"files":{"src/a.js":{"mutants":[{"status":"Killed"},{"status":"Survived"},{"status":"CompileError"}]}}}`, "src/a.js", 1, 2},
-		{"pit", `<mutations><mutation status="KILLED"><sourceFile>A.java</sourceFile><mutatedClass>com.acme.A</mutatedClass></mutation><mutation status="TIMED_OUT"><sourceFile>A.java</sourceFile><mutatedClass>com.acme.A</mutatedClass></mutation></mutations>`, "src/main/java/com/acme/A.java", 1, 2},
 	}
 	for _, tc := range cases {
 		t.Run(tc.format, func(t *testing.T) {
@@ -243,10 +241,13 @@ func TestNativeReportParsers(t *testing.T) {
 	}
 }
 func TestMetricsRejectMissingEmptyMalformedAndAmbiguousFiles(t *testing.T) {
-	for _, data := range []string{`{}`, `{"files":{"src/a.js":{"mutants":[]}}}`, `{"files":{"src/a.js":{"mutants":[{"status":"CompileError"}]}}}`} {
-		if _, err := parseMetrics([]byte(data), "stryker", "/repo", []string{"src/a.js"}); err == nil {
+	for _, data := range []string{`{}`, `{"src/a.js":{"path":"src/a.js","s":{},"b":{}}}`} {
+		if _, err := parseMetrics([]byte(data), "istanbul", "/repo", []string{"src/a.js"}); err == nil {
 			t.Errorf("empty metrics passed: %s", data)
 		}
+	}
+	if _, err := parseMetrics([]byte(`{"src/a.js":{"s":{"0":1}}}`), "unsupported", "/repo", []string{"src/a.js"}); err == nil {
+		t.Fatal("unsupported format accepted")
 	}
 	if _, err := parseMetrics([]byte("SF:a.js\nDA:1,bad\nend_of_record\n"), "lcov", "/repo", []string{"a.js"}); err == nil {
 		t.Fatal("malformed metrics accepted")
