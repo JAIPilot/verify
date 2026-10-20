@@ -5,8 +5,8 @@
 <h1 align="center">Verify your change before you ship it</h1>
 
 <p align="center">
-  <strong>A testing agent for code that changes existing behavior.</strong><br>
-  Learn what worked before. Find what changed. Resolve intent together. Lock the result with tests.
+  <strong>A testing agent that verifies existing behavior as you change code.</strong><br>
+  See what your change affected, decide what should happen, and test the result.
 </p>
 
 <p align="center">
@@ -16,7 +16,14 @@
   <a href="https://www.jaipilot.com/">JAIPilot.com</a>
 </p>
 
-You build the feature with your coding agent. **Verify reviews the whole change**: new code, edits to existing code, and the behavior those edits might have disturbed. It characterizes the old revision, replays those tests on your candidate, asks about ambiguous changes, shows proposed repairs for approval, and checks the accepted result before you apply it.
+## What Verify does
+
+1. **Make a code change.** Use Codex or any other tool. Verify looks at both new code and existing code you edited.
+2. **Check what used to work.** For the existing code you touched, Verify writes tests against the version before your change, then runs those tests on your changed version. You can see which behavior still works and which changed.
+3. **Decide what should happen.** Verify asks about unclear behavior and shows proposed code or test edits for your approval.
+4. **Test the agreed result.** Verify runs the project tests and coverage checks, reports the outcome, and lets you review the full diff before applying it.
+
+In the Petclinic demo below, Codex adds new pet type aliases. Verify checks that the existing pet names and errors still work, then tests the alias behavior we accept.
 
 ## Watch a real run: Codex → Verify → `good_to_go`
 
