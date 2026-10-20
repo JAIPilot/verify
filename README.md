@@ -18,25 +18,25 @@
 
 ## What Verify does
 
-1. **Make a code change.** Use Codex or any other tool. Verify looks at both new code and existing code you edited.
+1. **Make a code change with your coding agent.** Verify looks at both new code and existing code you edited.
 2. **Check what used to work.** For the existing code you touched, Verify writes tests against the version before your change, then runs those tests on your changed version. You can see which behavior still works and which changed.
 3. **Decide what should happen.** Verify asks about unclear behavior and shows proposed code or test edits for your approval.
 4. **Test the agreed result.** Verify runs the project tests and coverage checks, reports the outcome, and lets you review the full diff before applying it.
 
-In the Petclinic demo below, Codex adds new pet type aliases. Verify checks that the existing pet names and errors still work, then tests the alias behavior we accept.
+In the Petclinic demo below, a coding agent adds new pet type aliases. Verify checks that the existing pet names and errors still work, then tests the alias behavior we accept.
 
-## Watch a real run: Codex → Verify → `good_to_go`
+## Watch a real run: coding agent → Verify → `good_to_go`
 
-We recorded this on a local checkout of [Spring Framework Petclinic](https://github.com/spring-petclinic/spring-framework-petclinic). Codex added `kitty` → `cat` and `puppy` → `dog` aliases in a **new resolver**, while changing the **existing formatter**. Verify then checked the old formatter behavior, reviewed the new behavior with us, added tests, and finished with a passing evidence gate.
+We recorded this on a local checkout of [Spring Framework Petclinic](https://github.com/spring-petclinic/spring-framework-petclinic). A coding agent added `kitty` → `cat` and `puppy` → `dog` aliases in a **new resolver**, while changing the **existing formatter**. Verify then checked the old formatter behavior, reviewed the new behavior with us, added tests, and finished with a passing evidence gate.
 
 <p align="center">
   <img src="assets/verify-petclinic-story.gif" alt="Live Verify terminal recording: baseline characterization and replay, review, final test lock, and a good_to_go report" width="1000">
 </p>
 
-**The feature change, made with Codex.** The new class owns alias matching; `PetTypeFormatter.parse` still tries an exact canonical name first. Codex ran the focused formatter tests and the full Maven package.
+**The feature change, made with a coding agent.** The new class owns alias matching; `PetTypeFormatter.parse` still tries an exact canonical name first. The coding agent ran the focused formatter tests and the full Maven package.
 
 <p align="center">
-  <img src="assets/codex-petclinic-live.gif" alt="Live Codex terminal recording showing the new PetTypeAliasResolver and changes to the existing PetTypeFormatter" width="900">
+  <img src="assets/codex-petclinic-live.gif" alt="Live coding agent terminal recording showing the new PetTypeAliasResolver and changes to the existing PetTypeFormatter" width="900">
 </p>
 
 **The review decision.** Baseline characterization tests passed on the candidate. The reviewer identified an untested case where an alias's target type is absent and showed a proposed test edit for approval. We confirmed that the original `ParseException` should remain, reviewed a stronger assertion for its message and offset, then accepted the complete candidate diff.
