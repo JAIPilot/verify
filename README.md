@@ -5,8 +5,8 @@
 <h1 align="center">Verify your change before you ship it</h1>
 
 <p align="center">
-  <strong>A testing agent that verifies existing behavior as you change code.</strong><br>
-  See what your change affected, decide what should happen, and test the result.
+  <strong>A testing agent for code changes:<br>
+  lock existing behavior, review intent, and verify the result.</strong>
 </p>
 
 <p align="center">
@@ -18,40 +18,22 @@
 
 ## What Verify does
 
-1. **Make a code change with your coding agent.** Verify looks at both new code and existing code you edited.
-2. **Check what used to work.** For the existing code you touched, Verify writes tests against the version before your change, then runs those tests on your changed version. You can see which behavior still works and which changed.
+1. **Make a change with your coding agent.** Verify examines your new code and the existing code you edited.
+2. **Check for regressions.** Verify tests affected behavior before your change, then runs those tests on the changed code to spot regressions.
 3. **Decide what should happen.** Verify asks about unclear behavior and shows proposed code or test edits for your approval.
-4. **Test the agreed result.** Verify runs the project tests and coverage checks, reports the outcome, and lets you review the full diff before applying it.
+4. **Test the new code.** Verify adds tests for the agreed behavior, runs the project suite and coverage checks, and reports the result before you apply the verified diff.
 
-In the Petclinic demo below, a coding agent adds new pet type aliases. Verify checks that the existing pet names and errors still work, then tests the alias behavior we accept.
+In the Petclinic demo below, a coding agent adds new pet type aliases. Verify tests those aliases and checks that existing pet names and errors still work.
 
-## Watch a real run: coding agent → Verify → `good_to_go`
+## Watch one real run: coding agent → Verify → `good_to_go`
 
-We recorded this on a local checkout of [Spring Framework Petclinic](https://github.com/spring-petclinic/spring-framework-petclinic). A coding agent added `kitty` → `cat` and `puppy` → `dog` aliases in a **new resolver**, while changing the **existing formatter**. Verify then checked the old formatter behavior, reviewed the new behavior with us, added tests, and finished with a passing evidence gate.
-
-<p align="center">
-  <img src="assets/verify-petclinic-story.gif" alt="Live Verify terminal recording: baseline characterization and replay, review, final test lock, and a good_to_go report" width="1000">
-</p>
-
-**The feature change, made with a coding agent.** The new class owns alias matching; `PetTypeFormatter.parse` still tries an exact canonical name first. The coding agent ran the focused formatter tests and the full Maven package.
+In [Spring Framework Petclinic](https://github.com/spring-petclinic/spring-framework-petclinic), a coding agent added `kitty` → `cat` and `puppy` → `dog` in a new resolver and edited the existing formatter. This captioned GIF follows the actual local run from that change to Verify's final report.
 
 <p align="center">
-  <img src="assets/codex-petclinic-live.gif" alt="Live coding agent terminal recording showing the new PetTypeAliasResolver and changes to the existing PetTypeFormatter" width="900">
+  <img src="assets/verify-petclinic-story.gif" alt="One captioned recording: a coding agent adds pet type aliases, Verify checks for regressions, the user decides an edge case, Verify tests the new code, and the run reports good_to_go" width="1000">
 </p>
 
-**The review decision.** Baseline characterization tests passed on the candidate. The reviewer identified an untested case where an alias's target type is absent and showed a proposed test edit for approval. We confirmed that the original `ParseException` should remain, reviewed a stronger assertion for its message and offset, then accepted the complete candidate diff.
-
-<p align="center">
-  <img src="assets/verify-review-loop.gif" alt="Live Verify terminal recording of the user clarifying alias behavior during the review" width="900">
-</p>
-
-| Measured on the live run | Lines | Branches |
-| --- | ---: | ---: |
-| Original `PetTypeFormatter.java` | 10/10 | 4/4 |
-| Final `PetTypeFormatter.java` | 14/14 | 8/8 |
-| Final `PetTypeAliasResolver.java` | 2/2 | 8/8 |
-
-The final tester added direct resolver tests, then the full Maven suite passed. Verify reported `good_to_go` and applied the verified tests to the demo checkout. These GIFs use frames from the actual terminal recordings, with pauses adjusted for readability. [See the run and recording notes.](assets/demo/README.md)
+Verify found an untested missing-target case. During review, we confirmed that it should preserve the original error; Verify added tests for that rule and the new resolver. The full Maven suite and coverage checks passed, and Verify reported `good_to_go`. The GIF uses selected frames from real terminal recordings with explanatory captions. [See the run and recording notes.](assets/demo/README.md)
 
 ## How Verify works
 

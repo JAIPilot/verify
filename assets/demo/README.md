@@ -1,6 +1,6 @@
 # Spring Petclinic live demo
 
-These GIFs are excerpts from real local terminal recordings made on October 20, 2026. They contain captured Codex and Verify output and actual user decisions. Playback gaps were shortened; the final report's rapid output was paced so its verdict remains readable. No terminal text, test result, or decision was invented for the GIFs.
+The single demo GIF uses selected frames from real local terminal recordings made on October 20, 2026. It contains captured coding agent and Verify output and actual user decisions. Explanatory captions were added, and idle time and long output were skipped. No captured terminal text, test result, or decision was invented.
 
 ## Starting point
 
@@ -21,4 +21,4 @@ These GIFs are excerpts from real local terminal recordings made on October 20, 
 
 Verify added `PetTypeFormatterCharacterizationTests.java` on the baseline. The reviewer proposed two edits to `PetTypeFormatterTests.java`: first for an alias whose target type is absent, then to assert the original input and exception offset after user clarification. The final tester added `PetTypeAliasResolverTests.java` and ran the full suite and coverage gate. The verified changes were applied to the local demo checkout. These measured results describe this run; they are not a guarantee for other changes or repositories.
 
-The original `.cast` recordings and `report.json` remain in the local demo workspace. The public GIFs were rendered from those recordings with [asciinema](https://docs.asciinema.org/manual/cli/) and [agg](https://github.com/asciinema/agg). The Codex GIF shows its code change, the Verify story GIF follows review through the report, and the review GIF focuses on the user decision.
+The original `.cast` recordings and `report.json` remain in the local demo workspace. Terminal frames were rendered from those recordings with [asciinema](https://docs.asciinema.org/manual/cli/) and [agg](https://github.com/asciinema/agg), then assembled into the one captioned GIF. It shows the code change, regression check, user decision, final tests, and report in order.
