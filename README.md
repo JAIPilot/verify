@@ -38,6 +38,8 @@ irm https://raw.githubusercontent.com/JAIPilot/verify/main/install.ps1 | iex
 
 The installers download the latest release for your system and verify its SHA-256 checksum. To build from source instead, use Go 1.26.2 or later: `go build -o dist/verify ./cmd/verify`.
 
+Verify checks for a newer GitHub release when it starts. If one is available, it verifies and installs the update automatically. That run finishes using the version already in memory; the next run uses the update. On Windows, replacement happens after Verify exits. Use `verify update` to check manually. Previously installed binaries need one installer run to gain the automatic updater.
+
 Run Verify inside the Git repository containing your change:
 
 ~~~sh

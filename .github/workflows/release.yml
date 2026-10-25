@@ -42,5 +42,6 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" dist/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/* --title "Verify $GITHUB_REF_NAME" --generate-notes
+            gh release create "$GITHUB_REF_NAME" dist/* --title "Verify $GITHUB_REF_NAME" --generate-notes --latest
           fi
+          gh release edit "$GITHUB_REF_NAME" --latest

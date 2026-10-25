@@ -32,6 +32,21 @@ type stageResult struct {
 func Main(args []string) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), terminationSignals()...)
 	defer cancel()
+	if len(args) == 1 && args[0] == "update" {
+		result, err := checkAndInstallUpdate(ctx, true)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Verify update failed:", err)
+			return 2
+		}
+		if !result.Updated {
+			fmt.Println("Verify", Version, "is up to date")
+		} else if result.Scheduled {
+			fmt.Println("Verify", result.Version, "will be installed after this process exits; run verify again")
+		} else {
+			fmt.Println("Updated Verify to", result.Version+"; the next run uses it")
+		}
+		return 0
+	}
 	flags := flag.NewFlagSet("verify", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	o := options{}
@@ -43,7 +58,7 @@ func Main(args []string) int {
 	flags.BoolVar(&o.JSON, "json", false, "Print the final structured report as JSON")
 	version := flags.Bool("version", false, "Show version")
 	flags.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: verify [--agent auto|codex|claude] [--repo PATH] [--base REF] [--json]\n\nUses your installed coding agent and local project tools. No Verify account is required.\n\n")
+		fmt.Fprint(os.Stderr, "Usage: verify [--agent auto|codex|claude] [--repo PATH] [--base REF] [--json]\n       verify update\n\nUses your installed coding agent and local project tools. Checks for updates on each run.\n\n")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -59,6 +74,16 @@ func Main(args []string) int {
 	if flags.NArg() != 0 {
 		fmt.Fprintln(os.Stderr, "Unexpected arguments")
 		return 2
+	}
+	update, updateErr := checkAndInstallUpdate(ctx, false)
+	if updateErr != nil {
+		fmt.Fprintln(os.Stderr, "Verify update warning:", updateErr)
+	} else if update.Updated {
+		if update.Scheduled {
+			fmt.Fprintln(os.Stderr, "Verify update scheduled for after this run:", update.Version)
+		} else {
+			fmt.Fprintln(os.Stderr, "Verify updated to", update.Version+"; this run continues on", Version)
+		}
 	}
 	agent, err := selectAgent(o.Agent)
 	if err != nil {

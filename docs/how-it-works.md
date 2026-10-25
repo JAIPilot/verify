@@ -2,6 +2,8 @@
 
 Verify is an open source local runner plus prompts. It starts your installed Codex or Claude Code CLI in isolated Git worktrees. It does not call a JAIPilot service, require a JAIPilot login, select a provider model, or charge JAIPilot credits.
 
+At startup, Verify checks GitHub's latest release. A newer release is downloaded, checked against its published SHA-256 checksum, checked for the expected binary version, and installed in the same directory. The current invocation continues with the already loaded version; the next launch uses the update. Windows schedules executable replacement for after the current process exits. If GitHub is unreachable, verification continues. Run `verify update` for an explicit update check.
+
 ## Workflow
 
 | Stage | Agent task | Verify checks |
