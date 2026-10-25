@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 )
 
 func fixture(t *testing.T) string {
@@ -194,7 +193,7 @@ func TestBareVerifyShowsHelpAndRequiresStart(t *testing.T) {
 	}
 }
 
-func TestAgentOutputStreamsBeforeStageFinishes(t *testing.T) {
+func TestAgentTranscriptStaysOutOfTerminal(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake coding-agent executable is a POSIX shell script")
 	}
@@ -204,8 +203,7 @@ func TestAgentOutputStreamsBeforeStageFinishes(t *testing.T) {
 prompt=$(cat)
 result=$(printf '%s\n' "$prompt" | sed -n 's/^Write your result as a single JSON object to \([^ ]*\) in this workspace.*/\1/p')
 printf 'AGENT_IS_WORKING\n'
-while [ ! -f continue ]; do sleep 0.05; done
-printf '%s' '{"summary":"Completed after output was visible."}' > "$result"
+printf '%s' '{"summary":"Completed after writing tests."}' > "$result"
 `
 	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(script), 0755); err != nil {
 		t.Fatal(err)
@@ -220,43 +218,16 @@ printf '%s' '{"summary":"Completed after output was visible."}' > "$result"
 	os.Stderr = output
 	defer func() { os.Stderr = stderr }()
 	runDir := t.TempDir()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	done := make(chan error, 1)
-	go func() {
-		_, err := runAgentStage(ctx, "codex", root, runDir, "smoke", "Read this fixture.")
-		done <- err
-	}()
-	deadline := time.Now().Add(4 * time.Second)
-	observed := false
-	var outputErr error
-	for {
-		data, err := os.ReadFile(output.Name())
-		outputErr = err
-		if err != nil {
-			break
-		}
-		if strings.Contains(string(data), "AGENT_IS_WORKING") {
-			select {
-			case err := <-done:
-				t.Fatalf("stage finished before its live output was observed: %v", err)
-			default:
-			}
-			observed = true
-			break
-		}
-		if time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	mustWrite(t, root, "continue", "go")
-	if err := <-done; err != nil {
+	if _, err := runAgentStage(context.Background(), "codex", root, runDir, "smoke", "Read this fixture."); err != nil {
 		t.Fatal(err)
 	}
-	if outputErr != nil || !observed {
-		data, _ := os.ReadFile(output.Name())
-		t.Fatalf("agent output did not stream before completion: %s %v", data, outputErr)
+	shown, err := os.ReadFile(output.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(shown), "AGENT_IS_WORKING") || strings.Contains(string(shown), "Read this fixture") ||
+		strings.Contains(string(shown), "Agent log:") || !strings.Contains(string(shown), "working on smoke") {
+		t.Fatalf("terminal showed a transcript or hid progress: %s", shown)
 	}
 	log, err := os.ReadFile(filepath.Join(runDir, "smoke.log"))
 	if err != nil || !strings.Contains(string(log), "AGENT_IS_WORKING") {
@@ -264,7 +235,7 @@ printf '%s' '{"summary":"Completed after output was visible."}' > "$result"
 	}
 }
 
-func TestEvidenceCommandStreamsOutput(t *testing.T) {
+func TestEvidenceCommandReportsStatusWithoutRawOutput(t *testing.T) {
 	output, err := os.CreateTemp(t.TempDir(), "command-output-*")
 	if err != nil {
 		t.Fatal(err)
@@ -280,8 +251,8 @@ func TestEvidenceCommandStreamsOutput(t *testing.T) {
 		t.Fatalf("command result=%+v err=%v", result, err)
 	}
 	data, err := os.ReadFile(output.Name())
-	if err != nil || !strings.Contains(string(data), "TEST_IS_VISIBLE") {
-		t.Fatalf("test output was not visible: %s %v", data, err)
+	if err != nil || strings.Contains(string(data), "TEST_IS_VISIBLE") || !strings.Contains(string(data), "Passed") {
+		t.Fatalf("test status was missing or raw output was visible: %s %v", data, err)
 	}
 }
 
@@ -296,7 +267,8 @@ func TestEvidenceRejectsChainedCommands(t *testing.T) {
 func TestEmbeddedPromptsRenderContext(t *testing.T) {
 	w := &workspace{Base: "abc123", BaselineScope: []string{"src/a.java"}, FinalScope: []string{"src/a.java"}}
 	baseline := promptBaseline(w)
-	if !strings.Contains(baseline, "abc123") || !strings.Contains(baseline, "src/a.java") || strings.Contains(baseline, "{{") {
+	if !strings.Contains(baseline, "abc123") || !strings.Contains(baseline, "src/a.java") || strings.Contains(baseline, "{{") ||
+		!strings.Contains(baseline, "Do not run build, test, or coverage commands") {
 		t.Fatalf("baseline prompt was not rendered: %q", baseline)
 	}
 	review := promptReview(w, object{"replay": CommandResult{Command: "mvn test", ExitCode: 1, Output: "failed"}}, []object{{"answer": "Keep old behavior"}})

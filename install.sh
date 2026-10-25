@@ -36,7 +36,7 @@ trap 'exit_status=$?; rm -rf "$temporary"; exit "$exit_status"' 0
 trap 'exit 1' HUP INT TERM
 
 echo "Installing Verify $version for $platform/$architecture..." >&2
-curl -fSL --retry 2 --connect-timeout 10 --max-time 180 \
+curl -fsSL --retry 2 --connect-timeout 10 --max-time 180 \
   "$base/$asset" -o "$temporary/$asset"
 curl -fsSL --retry 2 --connect-timeout 10 --max-time 30 \
   "$base/checksums.txt" -o "$temporary/checksums.txt"

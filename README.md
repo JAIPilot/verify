@@ -53,7 +53,7 @@ Run `verify` or `verify help` to see all commands and options.
 
 ## What you see
 
-Verify shows startup progress and streams coding-agent and test-command output as it runs. It also saves a JSON and Markdown report, the agent prompts and logs, test results, and both worktrees in a private cache directory. It shows the candidate diff before you approve the behavior and the final tested diff before you decide whether to apply it. A `good_to_go` result means the baseline tests passed before your change and the final test suite passed on the reported candidate. Old-behavior replay failures are included in the report so you can decide whether they are regressions or intentional changes.
+Verify shows concise stage and test progress. It saves a JSON and Markdown report, the agent prompts and diagnostic logs, test results, and both worktrees in a private cache directory. It shows the candidate diff before you approve the behavior and the final tested diff before you decide whether to apply it. A `good_to_go` result means the baseline tests passed before your change and the final test suite passed on the reported candidate. Old-behavior replay failures are included in the report so you can decide whether they are regressions or intentional changes.
 
 Coverage is measured and reported when your project has a compatible native report. It is not a blanket 100% gate. A passing result cannot establish that untested behavior is correct.
 

@@ -2,5 +2,5 @@
 STAGE 1: BASELINE.
 This worktree is the merge-base {{BASE}} before the user's change. Existing affected source paths: {{SCOPE}}.
 Inspect the old code and nearby tests. Add new characterization test files for existing affected behavior, including useful boundary and error cases. Do not edit any existing file, production file, or build file. If all changed files are new, existing behavior has no baseline tests to add.
-Find a command that runs the new characterization tests and a separate command that runs the project's full existing suite. You may run them to debug, but Verify will rerun both and capture their actual exit codes.
+Find a command that runs the new characterization tests and a separate command that runs the project's full existing suite. Verify will execute both and capture their actual exit codes.
 In the result JSON, set summary, testCommand, and existingSuiteCommand. If setup prevents a valid test, set blocker instead.

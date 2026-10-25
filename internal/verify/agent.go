@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,25 +56,25 @@ func runAgentStage(ctx context.Context, agent, root, runDir, stage, prompt strin
 	default:
 		return stageResult{}, fmt.Errorf("unsupported agent %q", agent)
 	}
-	cmd.Stdout = io.MultiWriter(log, os.Stderr)
-	cmd.Stderr = io.MultiWriter(log, os.Stderr)
+	cmd.Stdout = log
+	cmd.Stderr = log
 	cmd.WaitDelay = 3 * time.Second
 	u := newTerminalUI(os.Stdin, os.Stderr)
-	u.activity("Running " + agent + " for " + stage + "…")
-	u.activity("Agent log: " + log.Name())
+	u.activity(agent + " is working on " + stage + "…")
 	if err := cmd.Start(); err != nil {
 		return stageResult{}, err
 	}
+	started := time.Now()
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case err = <-done:
 			goto finished
 		case <-ticker.C:
-			u.activity("Still working in " + stage + " (details in " + log.Name() + ")")
+			u.activity("Still working on " + stage + " (" + time.Since(started).Round(time.Second).String() + ")")
 		case <-ctx.Done():
 			terminate(cmd, false)
 			select {

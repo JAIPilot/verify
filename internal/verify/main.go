@@ -137,7 +137,7 @@ func verify(ctx context.Context, o options) (report object, err error) {
 	if err != nil {
 		return nil, err
 	}
-	u.activity("Run files: " + w.RunDir)
+	u.activity("Workspace ready")
 	report = object{
 		"version": 2, "agent": o.Agent, "verdict": "not_ready", "base": w.Base,
 		"repository": w.Root, "baselineScope": w.BaselineScope, "finalScope": w.FinalScope,

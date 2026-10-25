@@ -3,7 +3,7 @@ package verify
 import (
 	"context"
 	"errors"
-	"io"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -69,12 +69,13 @@ func runCommand(ctx context.Context, root string, in object) (CommandResult, err
 	if purpose == "" {
 		purpose = "task"
 	}
-	newTerminalUI(os.Stdin, os.Stderr).activity(purpose + "…")
+	u := newTerminalUI(os.Stdin, os.Stderr)
+	u.activity(purpose + "…")
 	started := time.Now()
 	cmd := shellCommand(root, command)
 	out, stderr := &tailWriter{}, &tailWriter{}
-	cmd.Stdout = io.MultiWriter(out, os.Stderr)
-	cmd.Stderr = io.MultiWriter(stderr, os.Stderr)
+	cmd.Stdout = out
+	cmd.Stderr = stderr
 	cmd.WaitDelay = 3 * time.Second
 	if err := cmd.Start(); err != nil {
 		return CommandResult{}, err
@@ -83,14 +84,24 @@ func runCommand(ctx context.Context, root string, in object) (CommandResult, err
 	go func() { done <- cmd.Wait() }()
 	timer := time.NewTimer(time.Duration(seconds) * time.Second)
 	defer timer.Stop()
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
 	timedOut := false
 	cancelled := false
-	select {
-	case err = <-done:
-	case <-ctx.Done():
-		cancelled = true
-	case <-timer.C:
-		timedOut = true
+wait:
+	for {
+		select {
+		case err = <-done:
+			break wait
+		case <-ctx.Done():
+			cancelled = true
+			break wait
+		case <-timer.C:
+			timedOut = true
+			break wait
+		case <-ticker.C:
+			u.activity(purpose + " is still running (" + time.Since(started).Round(time.Second).String() + ")")
+		}
 	}
 	if cancelled || timedOut {
 		terminate(cmd, false)
@@ -130,5 +141,13 @@ func runCommand(ctx context.Context, root string, in object) (CommandResult, err
 	if len(output) > maxOutput {
 		output = "\n… earlier command output omitted …\n" + output[len(output)-maxOutput:]
 	}
-	return CommandResult{command, code, output, truncated, timedOut, time.Since(started).Milliseconds()}, nil
+	duration := time.Since(started)
+	if code == 0 {
+		u.note("Passed", fmt.Sprintf("%s (%s)", purpose, duration.Round(time.Second)))
+	} else if timedOut {
+		u.problem(fmt.Sprintf("%s timed out after %s", purpose, duration.Round(time.Second)))
+	} else {
+		u.problem(fmt.Sprintf("%s failed (exit %d); details are in the report", purpose, code))
+	}
+	return CommandResult{command, code, output, truncated, timedOut, duration.Milliseconds()}, nil
 }

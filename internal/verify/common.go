@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-var Version = "0.1.1"
+var Version = "0.1.2"
 
 type object = map[string]any
 

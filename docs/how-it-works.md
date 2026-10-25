@@ -35,7 +35,7 @@ verify start --non-interactive --json
 
 Private run artifacts are saved under your OS cache directory at `jaipilot/verify/<run-id>/`. They include `report.json`, `report.md`, prompts, agent logs, and both worktrees. The report records whether the final diff was applied. Verify checks that the original checkout has not changed before applying the candidate and preserves its staging area.
 
-Verify prints update and workspace preparation progress, then displays each agent log path and streams agent output and test command output to the terminal. Live output goes to stderr, so `--json` keeps stdout available for the final structured report.
+Verify prints update, workspace, stage, and test status. The coding agent's transcript stays in the private diagnostic log; it is not printed to the terminal. Test output is captured in the report. Status messages go to stderr, so `--json` keeps stdout available for the final structured report. The agent supplies test commands but does not run them inside its sandbox; Verify runs them directly to capture reliable results.
 
 ## Coverage
 
