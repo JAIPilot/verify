@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -32,6 +33,26 @@ type stageResult struct {
 func Main(args []string) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), terminationSignals()...)
 	defer cancel()
+	flags := flag.NewFlagSet("verify start", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	o := options{}
+	flags.StringVar(&o.Repo, "repo", ".", "Git repository to verify")
+	flags.StringVar(&o.Base, "base", "", "Baseline ref (default: merge-base with origin/main or main)")
+	flags.StringVar(&o.Report, "report", "", "Also save the JSON report at this path")
+	flags.StringVar(&o.Agent, "agent", "auto", "Installed coding agent: auto, codex, or claude")
+	flags.BoolVar(&o.NonInteractive, "non-interactive", false, "Stop when an intent or approval decision needs input")
+	flags.BoolVar(&o.JSON, "json", false, "Print the final structured report as JSON")
+	version := flags.Bool("version", false, "Show version")
+	usage := func(out io.Writer) {
+		fmt.Fprint(out, "Usage: verify start [--agent auto|codex|claude] [--repo PATH] [--base REF] [--json]\n       verify update\n       verify help\n\nStart verifies the changes in your Git repository using your installed coding agent.\n\n")
+		flags.SetOutput(out)
+		flags.PrintDefaults()
+	}
+	flags.Usage = func() { usage(os.Stderr) }
+	if len(args) == 0 || len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
+		usage(os.Stdout)
+		return 0
+	}
 	if len(args) == 1 && args[0] == "update" {
 		result, err := checkAndInstallUpdate(ctx, true)
 		if err != nil {
@@ -47,21 +68,16 @@ func Main(args []string) int {
 		}
 		return 0
 	}
-	flags := flag.NewFlagSet("verify", flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
-	o := options{}
-	flags.StringVar(&o.Repo, "repo", ".", "Git repository to verify")
-	flags.StringVar(&o.Base, "base", "", "Baseline ref (default: merge-base with origin/main or main)")
-	flags.StringVar(&o.Report, "report", "", "Also save the JSON report at this path")
-	flags.StringVar(&o.Agent, "agent", "auto", "Installed coding agent: auto, codex, or claude")
-	flags.BoolVar(&o.NonInteractive, "non-interactive", false, "Stop when an intent or approval decision needs input")
-	flags.BoolVar(&o.JSON, "json", false, "Print the final structured report as JSON")
-	version := flags.Bool("version", false, "Show version")
-	flags.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: verify [--agent auto|codex|claude] [--repo PATH] [--base REF] [--json]\n       verify update\n\nUses your installed coding agent and local project tools. Checks for updates on each run.\n\n")
-		flags.PrintDefaults()
+	if len(args) == 1 && args[0] == "--version" {
+		fmt.Println(Version)
+		return 0
 	}
-	if err := flags.Parse(args); err != nil {
+	if args[0] != "start" {
+		fmt.Fprintln(os.Stderr, "Unknown command:", args[0])
+		usage(os.Stderr)
+		return 2
+	}
+	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
@@ -75,6 +91,7 @@ func Main(args []string) int {
 		fmt.Fprintln(os.Stderr, "Unexpected arguments")
 		return 2
 	}
+	newTerminalUI(os.Stdin, os.Stderr).activity("Checking for Verify updates…")
 	update, updateErr := checkAndInstallUpdate(ctx, false)
 	if updateErr != nil {
 		fmt.Fprintln(os.Stderr, "Verify update warning:", updateErr)
@@ -114,11 +131,13 @@ func Main(args []string) int {
 
 func verify(ctx context.Context, o options) (report object, err error) {
 	started := time.Now()
+	u := newTerminalUI(os.Stdin, os.Stderr)
+	u.activity("Preparing Git worktrees and scanning files…")
 	w, err := prepare(o.Repo, o.Base)
 	if err != nil {
 		return nil, err
 	}
-	u := newTerminalUI(os.Stdin, os.Stderr)
+	u.activity("Run files: " + w.RunDir)
 	report = object{
 		"version": 2, "agent": o.Agent, "verdict": "not_ready", "base": w.Base,
 		"repository": w.Root, "baselineScope": w.BaselineScope, "finalScope": w.FinalScope,

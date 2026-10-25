@@ -3,6 +3,7 @@ package verify
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -72,8 +73,8 @@ func runCommand(ctx context.Context, root string, in object) (CommandResult, err
 	started := time.Now()
 	cmd := shellCommand(root, command)
 	out, stderr := &tailWriter{}, &tailWriter{}
-	cmd.Stdout = out
-	cmd.Stderr = stderr
+	cmd.Stdout = io.MultiWriter(out, os.Stderr)
+	cmd.Stderr = io.MultiWriter(stderr, os.Stderr)
 	cmd.WaitDelay = 3 * time.Second
 	if err := cmd.Start(); err != nil {
 		return CommandResult{}, err

@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func fixture(t *testing.T) string {
@@ -160,6 +161,127 @@ printf '%s' '{"summary":"Local Claude stage completed."}' > "$result"
 	result, err := runAgentStage(context.Background(), "claude", root, t.TempDir(), "smoke", "Read this fixture.")
 	if err != nil || result.Summary != "Local Claude stage completed." {
 		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestBareVerifyShowsHelpAndRequiresStart(t *testing.T) {
+	output, err := os.CreateTemp(t.TempDir(), "cli-output-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer output.Close()
+	stdout, stderr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = output, output
+	defer func() { os.Stdout, os.Stderr = stdout, stderr }()
+	if code := Main(nil); code != 0 {
+		t.Fatalf("bare verify returned %d", code)
+	}
+	if code := Main([]string{"--agent", "codex"}); code != 2 {
+		t.Fatalf("verification without start returned %d", code)
+	}
+	if code := Main([]string{"start", "--help"}); code != 0 {
+		t.Fatalf("start help returned %d", code)
+	}
+	if code := Main([]string{"start", "--version"}); code != 0 {
+		t.Fatalf("start version returned %d", code)
+	}
+	data, err := os.ReadFile(output.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "Usage: verify start") || !strings.Contains(string(data), "Unknown command: --agent") {
+		t.Fatalf("unexpected help and command output: %s", data)
+	}
+}
+
+func TestAgentOutputStreamsBeforeStageFinishes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake coding-agent executable is a POSIX shell script")
+	}
+	root := t.TempDir()
+	bin := t.TempDir()
+	script := `#!/bin/sh
+prompt=$(cat)
+result=$(printf '%s\n' "$prompt" | sed -n 's/^Write your result as a single JSON object to \([^ ]*\) in this workspace.*/\1/p')
+printf 'AGENT_IS_WORKING\n'
+while [ ! -f continue ]; do sleep 0.05; done
+printf '%s' '{"summary":"Completed after output was visible."}' > "$result"
+`
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	output, err := os.CreateTemp(t.TempDir(), "agent-output-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer output.Close()
+	stderr := os.Stderr
+	os.Stderr = output
+	defer func() { os.Stderr = stderr }()
+	runDir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := runAgentStage(ctx, "codex", root, runDir, "smoke", "Read this fixture.")
+		done <- err
+	}()
+	deadline := time.Now().Add(4 * time.Second)
+	observed := false
+	var outputErr error
+	for {
+		data, err := os.ReadFile(output.Name())
+		outputErr = err
+		if err != nil {
+			break
+		}
+		if strings.Contains(string(data), "AGENT_IS_WORKING") {
+			select {
+			case err := <-done:
+				t.Fatalf("stage finished before its live output was observed: %v", err)
+			default:
+			}
+			observed = true
+			break
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	mustWrite(t, root, "continue", "go")
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if outputErr != nil || !observed {
+		data, _ := os.ReadFile(output.Name())
+		t.Fatalf("agent output did not stream before completion: %s %v", data, outputErr)
+	}
+	log, err := os.ReadFile(filepath.Join(runDir, "smoke.log"))
+	if err != nil || !strings.Contains(string(log), "AGENT_IS_WORKING") {
+		t.Fatalf("agent log did not retain output: %s %v", log, err)
+	}
+}
+
+func TestEvidenceCommandStreamsOutput(t *testing.T) {
+	output, err := os.CreateTemp(t.TempDir(), "command-output-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer output.Close()
+	stderr := os.Stderr
+	os.Stderr = output
+	defer func() { os.Stderr = stderr }()
+	result, err := runCommand(context.Background(), t.TempDir(), object{
+		"command": "printf TEST_IS_VISIBLE", "timeoutSeconds": 5, "purpose": "test",
+	})
+	if err != nil || result.ExitCode != 0 || !strings.Contains(result.Output, "TEST_IS_VISIBLE") {
+		t.Fatalf("command result=%+v err=%v", result, err)
+	}
+	data, err := os.ReadFile(output.Name())
+	if err != nil || !strings.Contains(string(data), "TEST_IS_VISIBLE") {
+		t.Fatalf("test output was not visible: %s %v", data, err)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,10 +57,12 @@ func runAgentStage(ctx context.Context, agent, root, runDir, stage, prompt strin
 	default:
 		return stageResult{}, fmt.Errorf("unsupported agent %q", agent)
 	}
-	cmd.Stdout = log
-	cmd.Stderr = log
+	cmd.Stdout = io.MultiWriter(log, os.Stderr)
+	cmd.Stderr = io.MultiWriter(log, os.Stderr)
+	cmd.WaitDelay = 3 * time.Second
 	u := newTerminalUI(os.Stdin, os.Stderr)
 	u.activity("Running " + agent + " for " + stage + "…")
+	u.activity("Agent log: " + log.Name())
 	if err := cmd.Start(); err != nil {
 		return stageResult{}, err
 	}

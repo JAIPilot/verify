@@ -2,7 +2,7 @@
 
 Verify is an open source local runner plus prompts. It starts your installed Codex or Claude Code CLI in isolated Git worktrees. It does not call a JAIPilot service, require a JAIPilot login, select a provider model, or charge JAIPilot credits.
 
-At startup, Verify checks GitHub's latest release. A newer release is downloaded, checked against its published SHA-256 checksum, checked for the expected binary version, and installed in the same directory. The current invocation continues with the already loaded version; the next launch uses the update. Windows schedules executable replacement for after the current process exits. If GitHub is unreachable, verification continues. Run `verify update` for an explicit update check.
+`verify start` checks GitHub's latest release before verification. A newer release is downloaded, checked against its published SHA-256 checksum, checked for the expected binary version, and installed in the same directory. The current invocation continues with the already loaded version; the next launch uses the update. Windows schedules executable replacement for after the current process exits. If GitHub is unreachable, verification continues. Run `verify update` for an explicit update check. Bare `verify` shows help without starting a run.
 
 ## Workflow
 
@@ -20,9 +20,9 @@ The default baseline is the merge-base of your current HEAD with `origin/HEAD`, 
 ## Commands and reports
 
 ~~~sh
-verify --agent codex --repo /path/to/project --base origin/main
-verify --json --report ./verify-report.json
-verify --non-interactive --json
+verify start --agent codex --repo /path/to/project --base origin/main
+verify start --json --report ./verify-report.json
+verify start --non-interactive --json
 ~~~
 
 `--non-interactive` stops with `needs_review` when the agent asks about intent or the candidate needs approval. It never supplies consent. The run does not yet resume automatically; its worktrees and logs remain available for inspection.
@@ -34,6 +34,8 @@ verify --non-interactive --json
 | 2 | Setup, agent execution, cancellation, or report error. |
 
 Private run artifacts are saved under your OS cache directory at `jaipilot/verify/<run-id>/`. They include `report.json`, `report.md`, prompts, agent logs, and both worktrees. The report records whether the final diff was applied. Verify checks that the original checkout has not changed before applying the candidate and preserves its staging area.
+
+Verify prints update and workspace preparation progress, then displays each agent log path and streams agent output and test command output to the terminal. Live output goes to stderr, so `--json` keeps stdout available for the final structured report.
 
 ## Coverage
 
