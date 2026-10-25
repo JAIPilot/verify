@@ -6,78 +6,62 @@
 
 <p align="center">
   <strong>A testing agent that verifies your code.</strong><br>
-  Tests your new code and checks existing behavior for regressions.
-</p>
-
-<p align="center">
-  <a href="https://github.com/JAIPilot/verify/releases/latest">Download Verify</a> ·
-  <a href="#install">Install</a> ·
-  <a href="#how-verify-works">How it works</a> ·
-  <a href="https://www.jaipilot.com/">JAIPilot.com</a>
+  Tests new behavior and checks existing behavior for regressions.
 </p>
 
 ## What Verify does
 
-1. **Run Verify before you commit.** Once your code change is ready, Verify examines new code and edits to existing code.
-2. **Check for regressions.** Verify tests affected behavior before your change, then runs those tests on the changed code to spot regressions.
-3. **Decide what should happen.** Verify asks about unclear behavior and shows proposed code or test edits for your approval.
-4. **Test the new code.** Verify adds tests for the agreed behavior, runs the project suite and coverage checks, and reports the result before you apply the verified diff.
+Run Verify after making a code change and before committing it. Verify uses your installed Codex or Claude Code CLI to:
 
-In the Petclinic demo below, a coding agent adds new pet type aliases. Verify tests those aliases and checks that existing pet names and errors still work.
+1. Add tests for affected behavior on the revision before your change.
+2. Run those tests on your changed code to reveal regressions.
+3. Ask you about unclear intent, then show you the complete proposed diff for approval.
+4. Add tests for the accepted new behavior, run the full suite, and report the evidence.
 
-## Watch one real run: coding agent → Verify → `good_to_go`
-
-In [Spring Framework Petclinic](https://github.com/spring-petclinic/spring-framework-petclinic), a coding agent added `kitty` → `cat` and `puppy` → `dog` in a new resolver and edited the existing formatter. This captioned GIF follows the actual local run from that change to Verify's final report.
-
-<p align="center">
-  <img src="assets/verify-petclinic-story.gif" alt="One captioned recording: a coding agent adds pet type aliases, Verify checks for regressions, the user decides an edge case, Verify tests the new code, and the run reports good_to_go" width="1000">
-</p>
-
-Verify found an untested missing-target case. During review, we confirmed that it should preserve the original error; Verify added tests for that rule and the new resolver. The full Maven suite and coverage checks passed, and Verify reported `good_to_go`. The GIF uses selected frames from real terminal recordings with explanatory captions. [See the run and recording notes.](assets/demo/README.md)
-
-## How Verify works
-
-| Step | What happens | Your part |
-| --- | --- | --- |
-| **1. Establish the baseline** | The testing agent adds characterization tests on the revision before your change, checks the existing behavior, then replays those frozen tests against your candidate. | See which old expectations still pass and which changed. |
-| **2. Review intent and edits** | A reviewer weighs the diff and test evidence, asks when intent is unclear, and proposes edits. | Answer in your own words or choose an option; inspect and accept the proposed diff. |
-| **3. Lock accepted behavior** | The original tester adds tests for the agreed behavior and reruns the suite and coverage checks. | Review the final evidence. |
-| **4. Get a decision** | A separate reporter explains the baseline, replay, decisions, blockers, and verdict. | Inspect the complete verified diff and choose whether to apply it. |
-
-Verify uses separate Git worktrees for the baseline and candidate, so your checkout stays in place while it works. It shows proposed edits before acceptance and the complete verified diff before promotion. A passing verdict requires fresh test and coverage evidence for affected files. [Read the detailed workflow.](docs/how-it-works.md)
+It works in separate Git worktrees. Your checkout stays untouched until you choose to apply the tested diff. The prompts and runner are in this repository. Verify makes no JAIPilot API requests and needs no JAIPilot account.
 
 ## Install
 
+Install and sign in to [Codex](https://developers.openai.com/codex/cli) or [Claude Code](https://code.claude.com/docs/en/quickstart) first. You also need Git and your project's normal build and test tools.
+
 **macOS / Linux**
 
-```sh
+~~~sh
 curl -fsSL https://raw.githubusercontent.com/JAIPilot/verify/main/install.sh | sh
-```
+~~~
 
 **Windows (PowerShell)**
 
-```powershell
+~~~powershell
 irm https://raw.githubusercontent.com/JAIPilot/verify/main/install.ps1 | iex
-```
+~~~
 
-The installers download the latest release for your system and check its SHA-256 checksum. On macOS and Linux, `verify` goes into `~/.local/bin`; the installer tells you how to add it to `PATH` if needed. On Windows, it adds `%LOCALAPPDATA%\JAIPilot\bin` to your user `PATH`; open a new terminal afterward. Check the install with `verify --version`, or [download an archive manually](https://github.com/JAIPilot/verify/releases/latest).
+The installers download the latest release for your system and verify its SHA-256 checksum. To build from source instead, use Go 1.26.2 or later: `go build -o dist/verify ./cmd/verify`.
 
-**Run it in the Git repository containing your changes:**
+Run Verify inside the Git repository containing your change:
 
-```sh
-verify auth login
+~~~sh
 verify
-```
+verify --agent codex
+verify --agent claude --base origin/main
+~~~
 
-Verify uses your JAIPilot sign-in and your project's local build, test, and coverage tools. Have Git and that project toolchain installed before running it.
+`--agent auto` uses Codex when installed, then Claude Code. Verify uses that CLI's existing sign-in and model settings. There is no `verify auth` command.
 
-## What you get
+## What you see
 
-- **A tested comparison:** characterization tests from the old revision, replayed on your candidate.
-- **A review you can steer:** questions about intent and previews of proposed changes.
-- **A final evidence gate:** local tests and coverage results for affected files.
-- **A clear handoff:** report, verdict, complete diff, and a separate choice to apply it.
+Verify saves a JSON and Markdown report, the agent prompts and logs, test results, and both worktrees in a private cache directory. It shows the candidate diff before you approve the behavior and the final tested diff before you decide whether to apply it. A `good_to_go` result means the baseline tests passed before your change and the final test suite passed on the reported candidate. Old-behavior replay failures are included in the report so you can decide whether they are regressions or intentional changes.
 
-The diff, requested file contents, test results, and command output are sent to JAIPilot and its model provider; builds and tests run locally. Passing checks protect the behavior they exercise, but do not prove a change is bug-free. [Data handling, evidence formats, exit codes, and development details →](docs/how-it-works.md)
+Coverage is measured and reported when your project has a compatible native report. It is not a blanket 100% gate. A passing result cannot establish that untested behavior is correct.
+
+The coding agent you select may send repository contents to its own provider under your account settings. Verify itself does not send data to JAIPilot. [See the detailed workflow and report format.](docs/how-it-works.md)
+
+## Demo
+
+<p align="center">
+  <img src="assets/verify-petclinic-story.gif" alt="A real Spring Petclinic run showing baseline tests, a user intent decision, tests for the new behavior, and a final report" width="1000">
+</p>
+
+This recording shows the testing story in Spring Petclinic using the earlier hosted version of Verify. The local-agent version uses the same baseline, review, and final testing sequence; its terminal screens will differ. [Recording notes](assets/demo/README.md).
 
 [Contributing](CONTRIBUTING.md) · [Report an issue](https://github.com/JAIPilot/verify/issues) · [MIT License](LICENSE)

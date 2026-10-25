@@ -14,6 +14,12 @@ func shellCommand(root, command string) *exec.Cmd {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	return cmd
 }
+func directCommand(root, name string, args ...string) *exec.Cmd {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = root
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	return cmd
+}
 func terminate(cmd *exec.Cmd, force bool) {
 	sig := syscall.SIGTERM
 	if force {

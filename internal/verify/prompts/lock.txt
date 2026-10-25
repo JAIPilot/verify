@@ -1,0 +1,7 @@
+
+STAGE 3: TEST THE ACCEPTED CHANGE.
+The user accepted the candidate diff. Production and build files are frozen. You may only add or edit test files in this worktree.
+Inspect the accepted new behavior in affected source paths {{SCOPE}}, the old tests and replay, and these review decisions: {{DECISIONS}}.
+Add tests for new behavior and intentional differences, including useful edge and error cases. Run focused tests to debug as needed.
+Choose one command for the complete final project test suite. If native coverage is configured, also give a coverageCommand, a generated coverageReport path relative to this worktree, and coverageFormat (istanbul, lcov, jacoco, or cobertura). Coverage is reported when available; do not invent it.
+Verify will run these commands itself after you finish. Write summary and testCommand in the result JSON. If production code needs another fix, set blocker instead of changing it.

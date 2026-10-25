@@ -72,28 +72,3 @@ func TestReviewAndReportFormatting(t *testing.T) {
 		t.Fatalf("long table was not rendered for terminal width: %s", got)
 	}
 }
-
-func TestReviewMenusMapChoicesToClearFeedback(t *testing.T) {
-	r := &runner{}
-	var choices []string
-	var withComment bool
-	r.AskChoice = func(_ string, offered []string, comment bool) (string, bool) {
-		choices, withComment = offered, comment
-		return offered[1], true
-	}
-	answer, ok := r.approveEdit()
-	if !ok || !withComment || len(choices) != 3 || choices[2] != "Skip this edit" || !strings.Contains(answer, "different edit") {
-		t.Fatalf("edit decision: %q, %v, %v", answer, ok, choices)
-	}
-	answer, ok = r.approveReview()
-	if !ok || !withComment || len(choices) != 2 || !strings.Contains(answer, "revise the candidate") {
-		t.Fatalf("review decision: %q, %v, %v", answer, ok, choices)
-	}
-	r.AskChoice = func(_ string, offered []string, _ bool) (string, bool) { return offered[0], true }
-	if answer, ok = r.approveEdit(); !ok || answer != "yes" {
-		t.Fatalf("acceptance: %q, %v", answer, ok)
-	}
-	if answer, ok = r.approveReview(); !ok || answer != "yes" {
-		t.Fatalf("review acceptance: %q, %v", answer, ok)
-	}
-}

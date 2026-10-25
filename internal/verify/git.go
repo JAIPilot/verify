@@ -2,7 +2,6 @@ package verify
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -73,7 +72,7 @@ func relevant(p string) bool {
 	}
 	b := filepath.Base(p)
 	switch b {
-	case "go.mod", "go.sum", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "gradle.properties", "Cargo.toml", "Cargo.lock", "pyproject.toml", "requirements.txt", "Makefile", "tsconfig.json", "verify.config.json":
+	case "go.mod", "go.sum", "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "gradle.properties", "Cargo.toml", "Cargo.lock", "pyproject.toml", "requirements.txt", "Makefile", "tsconfig.json":
 		return true
 	}
 	return false
@@ -438,9 +437,4 @@ func (w *workspace) promote() error {
 		}
 	}
 	return nil
-}
-
-// Kept separate so tests can exercise cancellation without launching a model.
-var execute = func(ctx context.Context, root string, in object) (CommandResult, error) {
-	return runCommand(ctx, root, in)
 }

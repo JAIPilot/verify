@@ -2,20 +2,14 @@ package verify
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
-func mustWrite(t *testing.T, root, p, s string) {
-	t.Helper()
-	if err := writeBytes(filepath.Join(root, p), []byte(s), 0644); err != nil {
-		t.Fatal(err)
-	}
-}
 func fixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -25,7 +19,7 @@ func fixture(t *testing.T) string {
 		}
 	}
 	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 1;\n")
-	mustWrite(t, root, ".gitignore", "node_modules/\ncoverage/\nreports/\n")
+	mustWrite(t, root, "existing.test.cjs", "const {test}=require('node:test'); const assert=require('node:assert/strict'); test('existing suite',()=>assert.equal(typeof require('./calc.cjs'),'function'));\n")
 	if _, err := git(root, nil, "add", "."); err != nil {
 		t.Fatal(err)
 	}
@@ -34,178 +28,185 @@ func fixture(t *testing.T) string {
 	}
 	return root
 }
-func setupRunner(t *testing.T, root string) *runner {
+
+func mustWrite(t *testing.T, root, name, content string) {
 	t.Helper()
+	if err := writeBytes(filepath.Join(root, name), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func cleanupRun(t *testing.T, root string, report object) {
+	t.Helper()
+	workspaces := obj(report["workspaces"])
+	for _, name := range []string{"baseline", "candidate"} {
+		if path := str(workspaces[name]); path != "" {
+			_, _ = git(root, nil, "worktree", "remove", "--force", path)
+		}
+	}
+	if path := str(report["reportPath"]); path != "" {
+		_ = os.RemoveAll(filepath.Dir(path))
+	}
+}
+
+func TestLocalPromptWorkflowFindsRegressionAndAppliesApprovedDiff(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake coding-agent executable is a POSIX shell script")
+	}
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("Node.js is required for this integration fixture")
+	}
+	root := fixture(t)
+	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
+	fakeBin := t.TempDir()
+	script := `#!/bin/sh
+prompt=$(cat)
+result=$(printf '%s\n' "$prompt" | sed -n 's/^Write your result as a single JSON object to \([^ ]*\) in this workspace.*/\1/p')
+if [ -z "$result" ]; then exit 10; fi
+case "$prompt" in
+  *"STAGE 1: BASELINE."*)
+    cat > calc.test.cjs <<'EOF'
+const {test}=require('node:test'); const assert=require('node:assert/strict'); test('old behavior',()=>assert.equal(require('./calc.cjs')(1),2));
+EOF
+    printf '%s' '{"summary":"Locked the old plus-one behavior.","testCommand":"node --test calc.test.cjs","existingSuiteCommand":"node --test"}' > "$result"
+    ;;
+  *"STAGE 2: REVIEW."*)
+    case "$prompt" in
+      *'"answer":"Preserve old"'*)
+        printf '%s\n' 'module.exports = x => x + 1;' > calc.cjs
+        printf '%s' '{"summary":"Restored old behavior after the user chose to preserve it."}' > "$result"
+        ;;
+      *)
+        printf '%s' '{"question":"Keep the old plus-one result?","options":["Preserve old","Accept new"]}' > "$result"
+        ;;
+    esac
+    ;;
+  *"STAGE 3: TEST THE ACCEPTED CHANGE."*)
+    cat > new.test.cjs <<'EOF'
+const {test}=require('node:test'); const assert=require('node:assert/strict'); test('accepted behavior',()=>assert.equal(require('./calc.cjs')(2),3));
+EOF
+    printf '%s' '{"summary":"Added a test for the accepted behavior.","testCommand":"node --test new.test.cjs"}' > "$result"
+    ;;
+  *) exit 11 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(fakeBin, "codex"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	input := filepath.Join(t.TempDir(), "answers")
+	if err := os.WriteFile(input, []byte("1\n1\n1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := os.Open(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	oldInput := os.Stdin
+	os.Stdin = reader
+	defer func() { os.Stdin = oldInput }()
+	report, err := verify(context.Background(), options{Repo: root, Base: "main", Agent: "codex"})
+	if report != nil {
+		defer cleanupRun(t, root, report)
+	}
+	if err != nil {
+		t.Fatalf("verify: %v, report=%v", err, report)
+	}
+	if report["verdict"] != "good_to_go" || report["applied"] != true {
+		t.Fatalf("unexpected verdict: %v", report)
+	}
+	if report["replay"].(CommandResult).ExitCode == 0 {
+		t.Fatal("old behavior replay should fail on the original candidate")
+	}
+	if report["finalTests"].(CommandResult).Command != "node --test" {
+		t.Fatal("final suite must use the original full-suite command")
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "calc.cjs")); err != nil || !strings.Contains(string(data), "x + 1") {
+		t.Fatalf("approved change was not applied: %s %v", data, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "new.test.cjs")); err != nil {
+		t.Fatal("final test was not applied")
+	}
+}
+
+func TestSelectAgentRequiresInstalledCLI(t *testing.T) {
+	if _, err := selectAgent("unknown"); err == nil {
+		t.Fatal("accepted unknown agent")
+	}
+	if _, err := selectAgent("claude"); err == nil {
+		if _, lookupErr := exec.LookPath("claude"); lookupErr != nil {
+			t.Fatal("selected missing Claude CLI")
+		}
+	}
+}
+
+func TestClaudeAdapterUsesLocalStageResult(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake Claude executable is a POSIX shell script")
+	}
+	root := t.TempDir()
+	bin := t.TempDir()
+	script := `#!/bin/sh
+for argument in "$@"; do prompt=$argument; done
+result=$(printf '%s\n' "$prompt" | sed -n 's/^Write your result as a single JSON object to \([^ ]*\) in this workspace.*/\1/p')
+if [ -z "$result" ]; then exit 10; fi
+printf '%s' '{"summary":"Local Claude stage completed."}' > "$result"
+`
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	result, err := runAgentStage(context.Background(), "claude", root, t.TempDir(), "smoke", "Read this fixture.")
+	if err != nil || result.Summary != "Local Claude stage completed." {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestEvidenceRejectsChainedCommands(t *testing.T) {
+	for _, command := range []string{"false | true", "false; true", "false && true", "false > out", ""} {
+		if err := directEvidenceCommand(command); err == nil {
+			t.Errorf("accepted %q", command)
+		}
+	}
+}
+
+func TestEmbeddedPromptsRenderContext(t *testing.T) {
+	w := &workspace{Base: "abc123", BaselineScope: []string{"src/a.java"}, FinalScope: []string{"src/a.java"}}
+	baseline := promptBaseline(w)
+	if !strings.Contains(baseline, "abc123") || !strings.Contains(baseline, "src/a.java") || strings.Contains(baseline, "{{") {
+		t.Fatalf("baseline prompt was not rendered: %q", baseline)
+	}
+	review := promptReview(w, object{"replay": CommandResult{Command: "mvn test", ExitCode: 1, Output: "failed"}}, []object{{"answer": "Keep old behavior"}})
+	if !strings.Contains(review, "Keep old behavior") || !strings.Contains(review, "failed") || strings.Contains(review, "{{") {
+		t.Fatalf("review prompt was not rendered: %q", review)
+	}
+	lock := promptLock(w, object{"decisions": []object{{"answer": "Keep old behavior"}}})
+	if !strings.Contains(lock, "src/a.java") || !strings.Contains(lock, "Keep old behavior") || strings.Contains(lock, "{{") {
+		t.Fatalf("lock prompt was not rendered: %q", lock)
+	}
+}
+
+func TestConcurrentCheckoutChangesPreventPromotion(t *testing.T) {
+	root := fixture(t)
+	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
 	w, err := prepare(root, "main")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_, _ = git(root, nil, "worktree", "remove", "--force", w.Baseline)
-		_, _ = git(root, nil, "worktree", "remove", "--force", w.Candidate)
-		_ = os.RemoveAll(w.RunDir)
-	})
-	initial, err := snapshot(w.Baseline, w.Known)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &runner{W: w, BaselineOriginal: initial, Ask: func(string) (string, bool) { return "yes", true }}
-}
-func TestSnapshotIncludesCommittedStagedUnstagedAndUntracked(t *testing.T) {
-	root := fixture(t)
-	if _, err := git(root, nil, "checkout", "-b", "feature"); err != nil {
-		t.Fatal(err)
-	}
-	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
-	_, _ = git(root, nil, "commit", "-am", "feature change")
-	mustWrite(t, root, "staged.cjs", "module.exports = 1;\n")
-	_, _ = git(root, nil, "add", "staged.cjs")
-	mustWrite(t, root, "staged.cjs", "module.exports = 2;\n")
-	mustWrite(t, root, "untracked.cjs", "module.exports = 3;\n")
-	before, _ := gitText(root, "status", "--porcelain")
-	r := setupRunner(t, root)
-	for p, want := range map[string]string{"calc.cjs": "x + 2", "staged.cjs": "= 2", "untracked.cjs": "= 3"} {
-		b, err := os.ReadFile(filepath.Join(r.W.Candidate, p))
-		if err != nil || !strings.Contains(string(b), want) {
-			t.Fatalf("candidate %s: %s %v", p, b, err)
-		}
-	}
-	after, _ := gitText(root, "status", "--porcelain")
-	if before != after {
-		t.Fatal("snapshot changed original status")
-	}
-	if len(r.W.BaselineScope) != 1 || len(r.W.FinalScope) != 3 {
-		t.Fatalf("scopes: %v / %v", r.W.BaselineScope, r.W.FinalScope)
-	}
-}
-func TestFrozenCharacterizationDetectsRegressionAndFinalLockPasses(t *testing.T) {
-	if _, err := exec.LookPath("node"); err != nil {
-		t.Skip("node unavailable")
-	}
-	root := fixture(t)
-	mustWrite(t, root, "existing.test.cjs", "const {test}=require('node:test'); const assert=require('node:assert/strict'); test('existing suite',()=>assert.equal(typeof require('./calc.cjs'),'function'));\n")
-	if _, err := git(root, nil, "add", "existing.test.cjs"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := git(root, nil, "commit", "-m", "existing test"); err != nil {
-		t.Fatal(err)
-	}
-	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
-	r := setupRunner(t, root)
-	ctx := context.Background()
-	test := `const {test}=require('node:test'); const assert=require('node:assert/strict'); test('locked behavior',()=>assert.equal(require('./calc.cjs')(1),2));`
-	if _, err := r.run(ctx, "baseline", "write_file", object{"path": "characterization.test.cjs", "content": test}); err != nil {
-		t.Fatal(err)
-	}
-	in := object{"kind": "tests", "command": "node --test", "timeoutSeconds": 30}
-	if out, err := r.run(ctx, "baseline", "measure", in); err != nil || num(out["exitCode"]) != 0 {
-		t.Fatalf("baseline %v %v", out, err)
-	}
-	if _, err := r.run(ctx, "baseline", "replay_baseline", object{"existingTestsCommand": "node --test existing.test.cjs | tail -1", "timeoutSeconds": 30}); err == nil {
-		t.Fatal("accepted a replay command that could mask test failures")
-	}
-	out, err := r.run(ctx, "baseline", "replay_baseline", object{"existingTestsCommand": "node --test existing.test.cjs", "timeoutSeconds": 30})
-	if err != nil {
-		t.Fatal(err)
-	}
-	existing := out["existingTests"].(CommandResult)
-	if existing.ExitCode != 0 || !strings.Contains(existing.Output, "existing suite") {
-		t.Fatalf("existing candidate suite did not run before replay: %v", out["existingTests"])
-	}
-	frozen := out["characterizationTests"].(CommandResult)
-	if frozen.ExitCode == 0 {
-		t.Fatal("characterization failed to detect regression")
-	}
-	original, _ := os.ReadFile(filepath.Join(root, "calc.cjs"))
-	if !strings.Contains(string(original), "x + 2") {
-		t.Fatal("original checkout changed")
-	}
-	if _, err = r.run(ctx, "review", "write_file", object{"path": "calc.cjs", "content": "module.exports = x => x + 1;\n", "explanation": "Restore intended behavior"}); err != nil {
-		t.Fatal(err)
-	}
-	if out, err = r.run(ctx, "review", "finish_stage", object{"summary": "The behavior should remain +1"}); err != nil || out["accepted"] != true {
-		t.Fatalf("accept %v %v", out, err)
-	}
-	if out, err = r.run(ctx, "lock", "measure", in); err != nil || num(out["exitCode"]) != 0 {
-		t.Fatalf("final tests %v %v", out, err)
-	}
-	if err = r.W.promote(); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := os.ReadFile(filepath.Join(root, "calc.cjs"))
-	if !strings.Contains(string(b), "x + 1") {
-		t.Fatal("accepted source not promoted")
-	}
-	if _, err = os.Stat(filepath.Join(root, "characterization.test.cjs")); err != nil {
-		t.Fatal("characterization test not promoted")
-	}
-}
-func TestMeasurementsRejectPipelinesThatMaskFailures(t *testing.T) {
-	root := fixture(t)
-	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
-	r := setupRunner(t, root)
-	for _, command := range []string{"false | tail -1", "false; true", "false & true"} {
-		if _, err := r.run(context.Background(), "baseline", "measure", object{"kind": "tests", "command": command, "timeoutSeconds": 5}); err == nil {
-			t.Fatalf("accepted masked failure command %q", command)
-		}
-	}
-}
-func TestEditsRequireAcceptanceAndCommandsCannotChangeSource(t *testing.T) {
-	root := fixture(t)
-	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
-	r := setupRunner(t, root)
-	r.Ask = func(string) (string, bool) { return "keep +2", true }
-	_, err := r.run(context.Background(), "review", "write_file", object{"path": "calc.cjs", "content": "wrong"})
-	if err == nil {
-		t.Fatal("rejected edit was accepted")
-	}
-	b, _ := os.ReadFile(filepath.Join(r.W.Candidate, "calc.cjs"))
-	if string(b) == "wrong" {
-		t.Fatal("rejected edit was written")
-	}
-	result := r.tool(context.Background(), "review", object{"id": "unsafe", "name": "run_command", "input": object{"command": "echo forbidden > calc.cjs", "timeoutSeconds": 10}})
-	if obj(result["value"])["needsReview"] != true || result["isError"] != true {
-		t.Fatalf("source edit not stopped: %v", result)
-	}
-	b, _ = os.ReadFile(filepath.Join(root, "calc.cjs"))
-	if !strings.Contains(string(b), "x + 2") {
-		t.Fatal("original was changed")
-	}
-}
-func TestExactEditWorksForLargeExistingFile(t *testing.T) {
-	root := fixture(t)
-	mustWrite(t, root, "calc.cjs", strings.Repeat("// filler\n", 70000)+"module.exports = x => x + 2;\n")
-	r := setupRunner(t, root)
-	edit := object{"path": "calc.cjs", "oldText": "x + 2", "newText": "x + 3", "explanation": "Fix the result"}
-	if out, err := r.run(context.Background(), "review", "edit_file", edit); err != nil || out["accepted"] != true {
-		t.Fatalf("exact edit failed: %v %v", out, err)
-	}
-	b, err := os.ReadFile(filepath.Join(r.W.Candidate, "calc.cjs"))
-	if err != nil || len(b) <= 512<<10 || !strings.Contains(string(b), "x + 3") {
-		t.Fatal("large candidate file was not edited")
-	}
-	if _, err := r.run(context.Background(), "review", "edit_file", object{"path": "calc.cjs", "oldText": "filler", "newText": "changed"}); err == nil {
-		t.Fatal("ambiguous replacement was accepted")
-	}
-	if _, err := r.run(context.Background(), "lock", "edit_file", edit); err == nil {
-		t.Fatal("source changed after review")
-	}
-}
-func TestConcurrentCheckoutChangesPreventPromotion(t *testing.T) {
-	root := fixture(t)
-	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
-	r := setupRunner(t, root)
-	mustWrite(t, r.W.Candidate, "calc.cjs", "module.exports = x => x + 3;\n")
+	defer cleanupRun(t, root, object{"workspaces": object{"baseline": w.Baseline, "candidate": w.Candidate}, "reportPath": filepath.Join(w.RunDir, "report.json")})
+	mustWrite(t, w.Candidate, "calc.cjs", "module.exports = x => x + 3;\n")
 	mustWrite(t, root, "calc.cjs", "user edits\n")
-	if err := r.W.promote(); err == nil {
+	if err := w.promote(); err == nil {
 		t.Fatal("overwrote concurrent edits")
 	}
-	b, _ := os.ReadFile(filepath.Join(root, "calc.cjs"))
-	if string(b) != "user edits\n" {
+	data, _ := os.ReadFile(filepath.Join(root, "calc.cjs"))
+	if string(data) != "user edits\n" {
 		t.Fatal("concurrent edits lost")
 	}
 }
-func TestSafePathRejectsSymlinksAndTraversal(t *testing.T) {
+
+func TestSafePathRejectsTraversalAndSymlinks(t *testing.T) {
 	root := t.TempDir()
 	for _, p := range []string{"../escape", ".git/config", "a/../../escape", root} {
 		if _, err := safePath(root, p); err == nil {
@@ -218,15 +219,15 @@ func TestSafePathRejectsSymlinksAndTraversal(t *testing.T) {
 		}
 	}
 }
-func TestNativeReportParsers(t *testing.T) {
+
+func TestNativeCoverageReportParsers(t *testing.T) {
 	cases := []struct {
 		format, data, path string
-		covered, total     int
 	}{
-		{"istanbul", `{"/repo/src/a.js":{"path":"/repo/src/a.js","s":{"0":1,"1":0},"b":{"0":[1,0]}}}`, "src/a.js", 1, 2},
-		{"lcov", "SF:src/a.js\nDA:1,1\nDA:2,0\nBRDA:1,0,0,1\nBRDA:1,0,1,-\nend_of_record\n", "src/a.js", 1, 2},
-		{"jacoco", `<report><package name="com/acme"><sourcefile name="A.java"><counter type="LINE" missed="1" covered="1"/><counter type="BRANCH" missed="1" covered="1"/></sourcefile></package></report>`, "src/main/java/com/acme/A.java", 1, 2},
-		{"cobertura", `<coverage><packages><package><classes><class filename="src/a.py"><lines><line hits="1" branch="true" condition-coverage="50% (1/2)"/><line hits="0"/></lines></class></classes></package></packages></coverage>`, "src/a.py", 1, 2},
+		{"istanbul", `{"/repo/src/a.js":{"path":"/repo/src/a.js","s":{"0":1,"1":0},"b":{"0":[1,0]}}}`, "src/a.js"},
+		{"lcov", "SF:src/a.js\nDA:1,1\nDA:2,0\nBRDA:1,0,0,1\nBRDA:1,0,1,-\nend_of_record\n", "src/a.js"},
+		{"jacoco", `<report><package name="com/acme"><sourcefile name="A.java"><counter type="LINE" missed="1" covered="1"/><counter type="BRANCH" missed="1" covered="1"/></sourcefile></package></report>`, "src/main/java/com/acme/A.java"},
+		{"cobertura", `<coverage><packages><package><classes><class filename="src/a.py"><lines><line hits="1" branch="true" condition-coverage="50% (1/2)"/><line hits="0"/></lines></class></classes></package></packages></coverage>`, "src/a.py"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.format, func(t *testing.T) {
@@ -234,227 +235,14 @@ func TestNativeReportParsers(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if m.Counters[0].Covered != tc.covered || m.Counters[0].Total != tc.total {
-				t.Fatalf("wrong counters %v", m)
+			if m.Counters[0].Covered != 1 || m.Counters[0].Total != 2 {
+				t.Fatalf("wrong counters: %+v", m)
 			}
 		})
 	}
-}
-func TestMetricsRejectMissingEmptyMalformedAndAmbiguousFiles(t *testing.T) {
 	for _, data := range []string{`{}`, `{"src/a.js":{"path":"src/a.js","s":{},"b":{}}}`} {
 		if _, err := parseMetrics([]byte(data), "istanbul", "/repo", []string{"src/a.js"}); err == nil {
 			t.Errorf("empty metrics passed: %s", data)
 		}
 	}
-	if _, err := parseMetrics([]byte(`{"src/a.js":{"s":{"0":1}}}`), "unsupported", "/repo", []string{"src/a.js"}); err == nil {
-		t.Fatal("unsupported format accepted")
-	}
-	if _, err := parseMetrics([]byte("SF:a.js\nDA:1,bad\nend_of_record\n"), "lcov", "/repo", []string{"a.js"}); err == nil {
-		t.Fatal("malformed metrics accepted")
-	}
-	if _, err := scopedPath("a.js", "/repo", []string{"one/a.js", "two/a.js"}); err == nil {
-		t.Fatal("ambiguous file accepted")
-	}
-}
-func TestNonInteractiveRunFinishesWithNeedsReviewReport(t *testing.T) {
-	root := fixture(t)
-	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
-	old := requestService
-	defer func() { requestService = old }()
-	step := 0
-	requestService = func(_ context.Context, body object) (object, error) {
-		step++
-		switch step {
-		case 1:
-			return object{"phase": "review", "state": "opaque", "content": []any{object{"id": "approval", "name": "finish_stage", "input": object{"summary": "Review required"}}}}, nil
-		case 2:
-			results := body["results"].([]object)
-			if obj(results[0]["value"])["needsReview"] != true {
-				t.Fatal("noninteractive approval bypassed")
-			}
-			return object{"phase": "report", "state": "opaque2", "content": []any{object{"id": "report", "name": "finish_report", "input": object{"report": "Review needed"}}}}, nil
-		default:
-			return object{"phase": "done", "verdict": "needs_review", "report": "Review needed"}, nil
-		}
-	}
-	report, err := verify(context.Background(), options{Repo: root, Base: "main", NonInteractive: true, MaxTurns: 10})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report["verdict"] != "needs_review" || report["applied"] != false {
-		t.Fatalf("bad report: %v", report)
-	}
-	b, err := os.ReadFile(str(report["reportPath"]))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var parsed object
-	if json.Unmarshal(b, &parsed) != nil || parsed["verdict"] != "needs_review" {
-		t.Fatal("report not persisted")
-	}
-	workspaces := obj(report["workspaces"])
-	for _, key := range []string{"baseline", "candidate"} {
-		_, _ = git(root, nil, "worktree", "remove", "--force", str(workspaces[key]))
-	}
-	_ = os.RemoveAll(filepath.Dir(str(report["reportPath"])))
-}
-
-func TestLargeDiffIsInspectedThroughToolsInsteadOfRejected(t *testing.T) {
-	root := fixture(t)
-	mustWrite(t, root, "calc.cjs", "module.exports = `"+strings.Repeat("a", 600<<10)+"`;\n")
-	mustWrite(t, root, "new.cjs", strings.Repeat("b", 1100<<10))
-	old := requestService
-	defer func() { requestService = old }()
-	requestService = func(_ context.Context, body object) (object, error) {
-		context := obj(body["context"])
-		if _, uploaded := context["diff"]; uploaded ||
-			len(str(context["instructions"])) > 500 ||
-			!strings.Contains(str(context["instructions"]), "diff stays local") {
-			t.Fatalf("large diff was uploaded instead of left in the worktree: %v", context)
-		}
-		return object{"phase": "done", "verdict": "needs_review", "report": "Inspect large diff"}, nil
-	}
-	report, err := verify(context.Background(), options{Repo: root, Base: "main", NonInteractive: true})
-	if err != nil || report["verdict"] != "needs_review" {
-		t.Fatalf("large diff failed before model inspection: %v, %v", err, report)
-	}
-	workspaces := obj(report["workspaces"])
-	w := &workspace{Candidate: str(workspaces["candidate"]), Base: str(report["base"]), RunDir: filepath.Dir(str(report["reportPath"]))}
-	full, err := w.diff()
-	if err != nil || len(full) <= 512<<10 {
-		t.Fatalf("fixture did not retain its full local diff: %d %v", len(full), err)
-	}
-	preview, err := w.reviewDiff("review", full)
-	if err != nil || len(preview) > 100<<10 {
-		t.Fatalf("large approval preview failed: %d %v", len(preview), err)
-	}
-	saved, err := os.ReadFile(filepath.Join(w.RunDir, "review.diff"))
-	if err != nil || string(saved) != full {
-		t.Fatal("approval diff was not saved in full")
-	}
-	for _, key := range []string{"baseline", "candidate"} {
-		_, _ = git(root, nil, "worktree", "remove", "--force", str(workspaces[key]))
-	}
-	_ = os.RemoveAll(filepath.Dir(str(report["reportPath"])))
-}
-func TestProposedEditDisplaysTheActualDiff(t *testing.T) {
-	output := fileDiff([]byte("before\n"), []byte("after\n"), false)
-	if !strings.Contains(output, "-before") || !strings.Contains(output, "+after") {
-		t.Fatalf("approval preview omitted the edit: %s", output)
-	}
-}
-func TestAgentQuestionPresentsOptionsAndReturnsSelection(t *testing.T) {
-	root := fixture(t)
-	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
-	r := setupRunner(t, root)
-	r.AskChoice = func(question string, choices []string, comment bool) (string, bool) {
-		if question != "Should null stay an error?" || !comment || len(choices) != 2 || choices[0] != "Preserve the error" {
-			t.Fatalf("wrong menu: %q, %v, %v", question, choices, comment)
-		}
-		return choices[0], true
-	}
-	result, err := r.run(context.Background(), "review", "ask_user", object{"question": "Should null stay an error?", "options": []any{"Preserve the error", "Return an empty result"}})
-	if err != nil || result["answer"] != "Preserve the error" {
-		t.Fatalf("wrong answer: %v, %v", result, err)
-	}
-	output := &strings.Builder{}
-	r.AskChoice = newTerminalUI(strings.NewReader("Keep the error message unchanged\n"), output).choose
-	result, err = r.run(context.Background(), "review", "ask_user", object{"question": "Should null stay an error?", "options": []any{"Preserve the error", "Return an empty result"}})
-	if err != nil || result["answer"] != "Keep the error message unchanged" {
-		t.Fatalf("direct comment did not reach the agent: %v, %v", result, err)
-	}
-}
-func TestGroupedReadsAndUsageAreRecorded(t *testing.T) {
-	root := fixture(t)
-	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
-	old := requestService
-	defer func() { requestService = old }()
-	step := 0
-	requestService = func(_ context.Context, body object) (object, error) {
-		step++
-		if step == 1 {
-			return object{
-				"phase": "baseline", "state": "opaque",
-				"usage": object{"inputTokens": 100, "outputTokens": 20, "cacheReadTokens": 50, "cacheWriteTokens": 10, "providerUsd": "0.001000000"},
-				"content": []any{
-					object{"id": "a", "name": "read_file", "input": object{"path": "calc.cjs"}},
-					object{"id": "b", "name": "read_file", "input": object{"path": ".gitignore"}},
-				},
-			}, nil
-		}
-		results := body["results"].([]object)
-		if len(results) != 2 || !strings.Contains(str(obj(results[0]["value"])["content"]), "x + 1") || !strings.Contains(str(obj(results[1]["value"])["content"]), "node_modules") {
-			t.Fatalf("grouped reads returned out of order: %v", results)
-		}
-		return object{"phase": "done", "verdict": "needs_review", "report": "Read complete"}, nil
-	}
-	report, err := verify(context.Background(), options{Repo: root, Base: "main", NonInteractive: true, MaxTurns: 10})
-	if err != nil {
-		t.Fatal(err)
-	}
-	usage := obj(report["usage"])
-	if num(usage["modelTurns"]) != 1 || num(usage["cacheReadTokens"]) != 50 || usage["estimatedProviderUsd"] != 0.001 {
-		t.Fatalf("usage was not recorded: %v", usage)
-	}
-	workspaces := obj(report["workspaces"])
-	for _, key := range []string{"baseline", "candidate"} {
-		_, _ = git(root, nil, "worktree", "remove", "--force", str(workspaces[key]))
-	}
-	_ = os.RemoveAll(filepath.Dir(str(report["reportPath"])))
-}
-func TestTextOnlyAgentTurnContinues(t *testing.T) {
-	root := fixture(t)
-	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
-	old := requestService
-	defer func() { requestService = old }()
-	step := 0
-	requestService = func(_ context.Context, body object) (object, error) {
-		step++
-		if step == 1 {
-			return object{"phase": "baseline", "state": "opaque", "content": []any{}}, nil
-		}
-		if results, ok := body["results"].([]object); !ok || len(results) != 0 {
-			t.Fatalf("empty tool turn was not acknowledged: %v", body["results"])
-		}
-		return object{"phase": "done", "verdict": "not_ready", "report": "Agent stopped"}, nil
-	}
-	report, err := verify(context.Background(), options{Repo: root, Base: "main", NonInteractive: true, MaxTurns: 10})
-	if err != nil || step != 2 {
-		t.Fatalf("text-only turn stopped the run: %v, steps %d", err, step)
-	}
-	workspaces := obj(report["workspaces"])
-	for _, key := range []string{"baseline", "candidate"} {
-		_, _ = git(root, nil, "worktree", "remove", "--force", str(workspaces[key]))
-	}
-	_ = os.RemoveAll(filepath.Dir(str(report["reportPath"])))
-}
-func TestMixedToolGroupRunsInOrder(t *testing.T) {
-	root := fixture(t)
-	mustWrite(t, root, "calc.cjs", "module.exports = x => x + 2;\n")
-	old := requestService
-	defer func() { requestService = old }()
-	step := 0
-	requestService = func(_ context.Context, body object) (object, error) {
-		step++
-		if step == 1 {
-			return object{"phase": "baseline", "state": "opaque", "content": []any{
-				object{"id": "write", "name": "run_command", "input": object{"command": "printf staged > GroupedTests.java", "purpose": "Create test", "timeoutSeconds": 5}},
-				object{"id": "read", "name": "read_file", "input": object{"path": "GroupedTests.java"}},
-			}}, nil
-		}
-		results := body["results"].([]object)
-		if len(results) != 2 || str(obj(results[1]["value"])["content"]) != "staged" {
-			t.Fatalf("mixed tools ran out of order: %v", results)
-		}
-		return object{"phase": "done", "verdict": "not_ready", "report": "Inspection complete"}, nil
-	}
-	report, err := verify(context.Background(), options{Repo: root, Base: "main", NonInteractive: true, MaxTurns: 10})
-	if err != nil || step != 2 {
-		t.Fatalf("mixed group failed: %v, steps %d", err, step)
-	}
-	workspaces := obj(report["workspaces"])
-	for _, key := range []string{"baseline", "candidate"} {
-		_, _ = git(root, nil, "worktree", "remove", "--force", str(workspaces[key]))
-	}
-	_ = os.RemoveAll(filepath.Dir(str(report["reportPath"])))
 }

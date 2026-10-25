@@ -14,6 +14,11 @@ func shellCommand(root, command string) *exec.Cmd {
 	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: `cmd.exe /d /s /c "` + command + `"`}
 	return cmd
 }
+func directCommand(root, name string, args ...string) *exec.Cmd {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = root
+	return cmd
+}
 func terminate(cmd *exec.Cmd, _ bool) {
 	if cmd.Process != nil {
 		_ = exec.Command("taskkill.exe", "/PID", fmt.Sprint(cmd.Process.Pid), "/T", "/F").Run()

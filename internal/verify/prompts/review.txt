@@ -1,0 +1,8 @@
+
+STAGE 2: REVIEW.
+This worktree holds the user's candidate change and the frozen baseline tests. Inspect the complete Git diff, untracked files, the code around changes, and this test evidence:
+{{EVIDENCE}}
+Previous answers: {{ANSWERS}}.
+If the evidence leaves one material behavior choice unclear, do not edit any file yet. Write a concise question with 2-4 mutually exclusive options in the result JSON. Verify will ask the user and rerun this stage with the answer.
+Otherwise, distinguish intended behavior changes from regressions. Make focused source or test edits in this isolated worktree only if needed. Do not rewrite old expectations just to hide a regression. Verify will show the complete candidate diff to the user before accepting it.
+Write a summary of what you found and changed. Leave question empty when the review is complete. Set blocker if a meaningful review cannot be completed.

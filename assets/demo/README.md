@@ -1,6 +1,6 @@
 # Spring Petclinic live demo
 
-The single demo GIF uses selected frames from real local terminal recordings made on October 20, 2026. It contains captured coding agent and Verify output and actual user decisions. Explanatory captions were added, and idle time and long output were skipped. No captured terminal text, test result, or decision was invented.
+The single demo GIF uses selected frames from real local terminal recordings made on October 20, 2026, using the earlier hosted version of Verify. It contains captured coding agent and Verify output and actual user decisions. Explanatory captions were added, and idle time and long output were skipped. No captured terminal text, test result, or decision was invented. The open source local-agent CLI has a different terminal flow.
 
 ## Starting point
 
