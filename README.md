@@ -2,27 +2,42 @@
   <img src="assets/jaipilot-logo.svg" alt="JAIPilot" width="88" height="88">
 </p>
 
-<h1 align="center">Verify your code before you ship it</h1>
+<h1 align="center">Verify a code change with executable evidence</h1>
 
 <p align="center">
-  <strong>A testing agent that verifies your code.</strong><br>
-  Tests new behavior and checks existing behavior for regressions.
+  <strong>Turn a change or reviewer finding into a focused test.</strong><br>
+  Run the test on both revisions and inspect the evidence.
 </p>
 
-## What Verify does
+<p align="center">
+  <a href="https://github.com/JAIPilot/verify/actions/workflows/ci.yml"><img src="https://github.com/JAIPilot/verify/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/JAIPilot/verify/releases/latest"><img src="https://img.shields.io/github/v/release/JAIPilot/verify" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/JAIPilot/verify" alt="MIT license"></a>
+</p>
 
-Run Verify after making a code change and before committing it. Verify uses your installed Codex or Claude Code CLI to:
+## Verify a change
 
-1. Add tests for affected behavior on the revision before your change.
-2. Run those tests on your changed code to reveal regressions.
-3. Ask you about unclear intent, then show you the complete proposed diff for approval.
-4. Add tests for the accepted new behavior, run the full suite, and report the evidence.
+Run `verify` inside a Git repository with a committed or uncommitted change:
 
-It works in separate Git worktrees. Your checkout stays untouched until you choose to apply the tested diff. The prompts and runner are in this repository. Verify makes no JAIPilot API requests and needs no JAIPilot account.
+~~~sh
+verify
+verify --finding "The retry can charge the same payment twice"
+verify check --finding-file reviewer-comment.txt
+~~~
+
+Verify detects the repository and base revision, reads the changed files and nearby project context, and asks JAIPilot's managed Claude endpoint for one focused test. It writes the proposed test in isolated Git worktrees and runs the same command on the base and changed revisions. A test that does not build can be revised using its actual execution output, for at most three proposals per run. The command must use an approved project test runner; Verify does not install dependencies or run model-proposed shell pipelines.
+
+The default run does not edit your checkout. After seeing the evidence and generated test diff, you can choose to add that test file. Verify never edits production code in this flow. Source snippets, diffs, reviewer findings, and test output used by the model are sent to the JAIPilot backend and Claude. Test commands execute on your machine in temporary worktrees.
+
+The verdict describes the observed test result: `introduced_regression` means the test passed on the base and failed on your change; `changed_behavior_verified` means the reverse; `no_reproduction_found` means the attempted test passed on both; and `inconclusive` covers failures on both or timeouts. Inspect the test assertion and command before relying on a verdict. Passing one generated test does not establish that the whole change is safe.
+
+Verify uses your JAIPilot sign-in and shared credits for Claude calls. The first run opens browser sign-in if needed. It charges measured model usage, returns credits used, and limits each run to three model proposals. Local test execution consumes no JAIPilot credits. Each run's reports, generated diff, and worktrees remain in a private cache directory for inspection.
+
+Test commands run in worktrees with your local project toolchain; worktrees are not an operating-system sandbox. Run Verify on repositories and toolchains you trust. The model receives only selected changed files, relevant project context, the finding, and bounded test output. It does not receive a repository archive.
 
 ## Install
 
-Install and sign in to [Codex](https://developers.openai.com/codex/cli) or [Claude Code](https://code.claude.com/docs/en/quickstart) first. You also need Git and your project's normal build and test tools.
+You need Git and your project's normal build and test tools. Verify uses the same JAIPilot browser sign-in as the JAIPilot CLI.
 
 **macOS / Linux**
 
@@ -40,7 +55,7 @@ The installers download the latest release for your system and verify its SHA-25
 
 `verify start` checks for a newer GitHub release before verification. If one is available, it verifies and installs the update automatically. That run finishes using the version already in memory; the next run uses the update. On Windows, replacement happens after Verify exits. Use `verify update` to check manually. Previously installed binaries need one installer run to gain the automatic updater.
 
-Run Verify inside the Git repository containing your change:
+The earlier local-agent workflow remains available as `verify start`:
 
 ~~~sh
 verify start
@@ -48,23 +63,25 @@ verify start --agent codex
 verify start --agent claude --base origin/main
 ~~~
 
-`--agent auto` uses Codex when installed, then Claude Code. Verify uses that CLI's existing sign-in and model settings. There is no `verify auth` command.
-Run `verify` or `verify help` to see all commands and options.
+`verify start` requires a signed-in Codex or Claude Code CLI. It can propose source edits and final tests, and has a different approval flow. See [the legacy workflow](docs/how-it-works.md).
+Run `verify --help` for the new check options or `verify start --help` for the earlier workflow options.
 
 ## What you see
 
-Verify shows concise stage and test progress. It saves a JSON and Markdown report, the agent prompts and diagnostic logs, test results, and both worktrees in a private cache directory. It shows the candidate diff before you approve the behavior and the final tested diff before you decide whether to apply it. A `good_to_go` result means the baseline tests passed before your change and the final test suite passed on the reported candidate. Old-behavior replay failures are included in the report so you can decide whether they are regressions or intentional changes.
+The new check prints the verdict, test path, command, both exit codes, credits used, and report path. The JSON report retains bounded command output and points to the saved generated test diff. Use `verify check --json --non-interactive` for automation.
 
-Coverage is measured and reported when your project has a compatible native report. It is not a blanket 100% gate. A passing result cannot establish that untested behavior is correct.
+~~~text
+Verify: introduced_regression
+The focused test passed on the base and failed on the change.
+Test: calc.increment.test.cjs  Command: node --test calc.increment.test.cjs
+Base: exit 0  Change: exit 1
+Credits: 1  Evidence: <private cache>/jaipilot/verify/<run-id>/report.json
+~~~
 
-The coding agent you select may send repository contents to its own provider under your account settings. Verify itself does not send data to JAIPilot. [See the detailed workflow and report format.](docs/how-it-works.md)
+The exit code reports whether Verify completed. Read the `verdict` field when using it as a CI gate; a completed run can still report a regression or an inconclusive test.
 
-## Demo
+The check is language-neutral. It follows existing test conventions and permits common Go, JavaScript/TypeScript, Python, Java/Kotlin, Rust, .NET, Swift, Ruby, PHP, and C/C++ test file types. Projects whose test command is unavailable or unsupported receive an inconclusive result.
 
-<p align="center">
-  <img src="assets/verify-petclinic-story.gif" alt="A real Spring Petclinic run showing baseline tests, a user intent decision, tests for the new behavior, and a final report" width="1000">
-</p>
-
-This recording shows the testing story in Spring Petclinic using the earlier hosted version of Verify. The local-agent version uses the same baseline, review, and final testing sequence; its terminal screens will differ. [Recording notes](assets/demo/README.md).
+The managed backend and credit migration are maintained in the JAIPilot functions repository. The [earlier local-agent workflow](docs/how-it-works.md) remains available as `verify start`.
 
 [Contributing](CONTRIBUTING.md) · [Report an issue](https://github.com/JAIPilot/verify/issues) · [MIT License](LICENSE)

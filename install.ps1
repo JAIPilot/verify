@@ -52,4 +52,4 @@ if (($userPath -split ';') -notcontains $InstallDir) {
   [Environment]::SetEnvironmentVariable('Path', "$InstallDir;$userPath", 'User')
 }
 if (($env:Path -split ';') -notcontains $InstallDir) { $env:Path = "$InstallDir;$env:Path" }
-Write-Host "Installed Verify $Version. Open a new terminal and run: verify --help (install and sign in to Codex or Claude Code first)"
+Write-Host "Installed Verify $Version. Open a new terminal and run verify in a Git repository with a change. Your first run opens JAIPilot sign-in."

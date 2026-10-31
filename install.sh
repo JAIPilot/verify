@@ -67,4 +67,4 @@ case ":${PATH:-}:" in
   *":$install_dir:"*) ;;
   *) printf 'Add this directory to your PATH:\n  export PATH="%s:$PATH"\n' "$install_dir" >&2 ;;
 esac
-echo 'Run: verify --help (install and sign in to Codex or Claude Code first)' >&2
+echo 'Run verify in a Git repository with a change. Your first run opens JAIPilot sign-in.' >&2

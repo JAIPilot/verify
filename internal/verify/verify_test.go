@@ -163,7 +163,15 @@ printf '%s' '{"summary":"Local Claude stage completed."}' > "$result"
 	}
 }
 
-func TestBareVerifyShowsHelpAndRequiresStart(t *testing.T) {
+func TestBareVerifyStartsCheckAndHelpRemainsAvailable(t *testing.T) {
+	previousDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(previousDir)
 	output, err := os.CreateTemp(t.TempDir(), "cli-output-*")
 	if err != nil {
 		t.Fatal(err)
@@ -172,8 +180,11 @@ func TestBareVerifyShowsHelpAndRequiresStart(t *testing.T) {
 	stdout, stderr := os.Stdout, os.Stderr
 	os.Stdout, os.Stderr = output, output
 	defer func() { os.Stdout, os.Stderr = stdout, stderr }()
-	if code := Main(nil); code != 0 {
-		t.Fatalf("bare verify returned %d", code)
+	if code := Main(nil); code != 1 {
+		t.Fatalf("bare verify without a Git change returned %d", code)
+	}
+	if code := Main([]string{"--finding", "Check the changed behavior"}); code != 1 {
+		t.Fatalf("verify --finding without a Git change returned %d", code)
 	}
 	if code := Main([]string{"--agent", "codex"}); code != 2 {
 		t.Fatalf("verification without start returned %d", code)
@@ -188,7 +199,7 @@ func TestBareVerifyShowsHelpAndRequiresStart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "Usage: verify start") || !strings.Contains(string(data), "Unknown command: --agent") {
+	if !strings.Contains(string(data), "verify start [") || !strings.Contains(string(data), "Unknown command: --agent") || !strings.Contains(string(data), "Verify:") {
 		t.Fatalf("unexpected help and command output: %s", data)
 	}
 }

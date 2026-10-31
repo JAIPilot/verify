@@ -33,6 +33,22 @@ type stageResult struct {
 func Main(args []string) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), terminationSignals()...)
 	defer cancel()
+	if len(args) == 0 {
+		return checkMain(ctx, nil)
+	}
+	if args[0] == "check" {
+		return checkMain(ctx, args[1:])
+	}
+	if args[0] == "--version" && len(args) == 1 {
+		fmt.Println(Version)
+		return 0
+	}
+	if args[0] == "help" && len(args) == 1 {
+		return checkMain(ctx, []string{"--help"})
+	}
+	if args[0] != "--agent" && strings.HasPrefix(args[0], "-") {
+		return checkMain(ctx, args)
+	}
 	flags := flag.NewFlagSet("verify start", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	o := options{}
@@ -44,15 +60,11 @@ func Main(args []string) int {
 	flags.BoolVar(&o.JSON, "json", false, "Print the final structured report as JSON")
 	version := flags.Bool("version", false, "Show version")
 	usage := func(out io.Writer) {
-		fmt.Fprint(out, "Usage: verify start [--agent auto|codex|claude] [--repo PATH] [--base REF] [--json]\n       verify update\n       verify help\n\nStart verifies the changes in your Git repository using your installed coding agent.\n\n")
+		fmt.Fprint(out, "Usage: verify [--finding TEXT] [--base REF] [--json]\n       verify check [options]\n       verify start [--agent auto|codex|claude] [--repo PATH] [--base REF] [--json]\n       verify update\n       verify help\n\nBare verify runs the managed, test-only check. Start runs the earlier local-agent workflow.\n\n")
 		flags.SetOutput(out)
 		flags.PrintDefaults()
 	}
 	flags.Usage = func() { usage(os.Stderr) }
-	if len(args) == 0 || len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
-		usage(os.Stdout)
-		return 0
-	}
 	if len(args) == 1 && args[0] == "update" {
 		result, err := checkAndInstallUpdate(ctx, true)
 		if err != nil {
