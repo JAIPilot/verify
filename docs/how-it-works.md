@@ -1,6 +1,6 @@
 # How the earlier `verify start` workflow works
 
-Verify is an open source local runner plus prompts. It starts your installed Codex or Claude Code CLI in isolated Git worktrees. It does not call a JAIPilot service, require a JAIPilot login, select a provider model, or charge JAIPilot credits.
+Verify is an open source local runner plus prompts. It starts a supported local coding agent in isolated Git worktrees. It does not call a JAIPilot service, require a JAIPilot login, or charge JAIPilot credits.
 
 The [Spring Petclinic recording](../assets/verify-petclinic-story.gif) shows the earlier hosted multi-stage workflow; its [notes](../assets/demo/README.md) describe the captured run. The `verify start` terminal screens differ from that recording.
 
@@ -47,8 +47,8 @@ Tests and coverage commands run with your local project toolchain. A passing sui
 
 ## Data and permissions
 
-Verify makes no JAIPilot API requests. Codex or Claude Code may send repository files and command output to their configured provider. Their existing account, model, and usage terms apply.
+`verify start` makes no JAIPilot API requests. The local coding agent may send repository files and command output to its configured service. Its existing account and usage terms apply.
 
-The local worktrees keep the original checkout separate, but they are not an operating-system sandbox. Codex is launched with its workspace-write sandbox. Claude Code is launched in print mode with file edit and shell tools allowed so it can complete local test work. Run Verify on repositories and toolchains you trust.
+The local worktrees keep the original checkout separate, but they are not an operating-system sandbox. The coding agent can read and edit files in its worktree and run commands needed for the workflow. Run Verify on repositories and toolchains you trust.
 
-The CLI's source and prompts are MIT licensed. The adapter for Codex is tested locally; the Claude Code adapter should be exercised on a machine with Claude Code installed before a release claims live compatibility.
+The CLI's source and prompts are MIT licensed. Agent integrations should be exercised on machines with their respective CLIs installed before a release claims live compatibility.

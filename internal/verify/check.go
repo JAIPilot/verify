@@ -344,29 +344,29 @@ func safeModelPath(path string) bool {
 func validateProposal(p checkProposal) error {
 	allowedExt := map[string]bool{".go": true, ".js": true, ".jsx": true, ".cjs": true, ".mjs": true, ".ts": true, ".tsx": true, ".py": true, ".java": true, ".kt": true, ".rs": true, ".cs": true, ".rb": true, ".php": true, ".swift": true, ".scala": true, ".c": true, ".cpp": true}
 	if !testPath(p.Path) || strings.ContainsAny(p.Path, " \t\r\n") || !allowedExt[strings.ToLower(filepath.Ext(p.Path))] || p.Content == "" || len(p.Content) > 30000 {
-		return errors.New("Claude did not provide a valid new test file")
+		return errors.New("Verify did not receive a valid new test file")
 	}
 	if len(p.Command) == 0 || len(p.Command) > 500 || strings.ContainsAny(p.Command, "\n\r;&|`$<>(){}\\\"'") {
-		return errors.New("Claude proposed an unsafe test command")
+		return errors.New("Verify rejected an unsafe test command")
 	}
 	parts := strings.Fields(p.Command)
 	if len(parts) == 0 {
-		return errors.New("Claude proposed no test command")
+		return errors.New("Verify did not receive a test command")
 	}
 	exe := filepath.Base(parts[0])
 	allowed := map[string]bool{"go": true, "node": true, "npm": true, "npx": true, "pnpm": true, "yarn": true, "bun": true, "deno": true, "pytest": true, "python": true, "python3": true, "mvn": true, "mvnw": true, "gradle": true, "gradlew": true, "cargo": true, "dotnet": true, "swift": true, "ruby": true, "bundle": true, "php": true, "composer": true, "make": true}
 	allowed["ctest"], allowed["bazel"], allowed["buck2"] = true, true, true
 	if !allowed[exe] {
-		return errors.New("Claude proposed an unsupported test runner")
+		return errors.New("Verify rejected an unsupported test runner")
 	}
 	for _, arg := range parts[1:] {
 		if filepath.IsAbs(arg) || strings.HasPrefix(arg, "/") || strings.HasPrefix(arg, "~/") || strings.Contains(arg, "=/") || arg == ".." || strings.HasPrefix(arg, "../") || strings.Contains(arg, "/../") {
-			return errors.New("Claude proposed a test command outside the worktree")
+			return errors.New("Verify rejected a test command outside the worktree")
 		}
 	}
 	command := strings.ToLower(p.Command)
 	if !strings.Contains(command, "test") && !strings.Contains(command, "spec") && !strings.Contains(command, "check") && !strings.Contains(command, "verify") && !strings.Contains(command, "unit") {
-		return errors.New("Claude proposed a command that does not appear to run tests")
+		return errors.New("Verify rejected a command that does not appear to run tests")
 	}
 	return nil
 }
