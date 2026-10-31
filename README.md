@@ -6,6 +6,12 @@
 
 Turn a code change or review comment into an executable test. Verify runs the test on the base and changed revisions, then shows what happened.
 
+<p align="center">
+  <img src="assets/verify-petclinic-story.gif" alt="Verify demo on Spring Petclinic" width="1000">
+</p>
+
+*Spring Petclinic recording from an earlier interface. The current command has a simpler terminal flow.*
+
 ## Run
 
 From a Git repository:
@@ -15,7 +21,7 @@ verify
 verify --finding "The retry can charge the same payment twice"
 ```
 
-Verify generates a focused test and runs it in temporary Git worktrees. Your checkout stays unchanged unless you choose to add the test. The result includes both test runs, the generated test diff, and a verdict. Use `verify check --json --non-interactive` in automation.
+Verify generates a focused test and runs it in temporary Git worktrees. Your checkout stays unchanged unless you choose to add the test. The result shows the test diff, command, both test runs, and a verdict. For example, `introduced_regression` means the test passed on the base and failed on your change. Use `verify check --json --non-interactive` in automation.
 
 Verify uses your JAIPilot sign-in and shared credits for test generation. Local test execution uses your existing project tools and consumes no JAIPilot credits.
 
