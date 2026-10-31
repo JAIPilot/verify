@@ -34,11 +34,6 @@ func (u *terminalUI) paint(code, s string) string {
 	return "\x1b[" + code + "m" + s + "\x1b[0m"
 }
 
-func (u *terminalUI) stage(number, title string) {
-	fmt.Fprintln(u.out, "\n"+u.paint("1;36", "VERIFY  "+number+" / 4")+"  "+u.paint("1", title))
-	fmt.Fprintln(u.out, u.paint("2", strings.Repeat("─", 58)))
-}
-
 func (u *terminalUI) activity(message string) {
 	fmt.Fprintln(u.out, u.paint("36", "  •")+" "+message)
 }
@@ -139,7 +134,7 @@ func wrapWords(s string, width int) []string {
 func (u *terminalUI) preview(title, detail, diff string) {
 	fmt.Fprintln(u.out, "\n"+u.paint("1;36", title))
 	if detail != "" {
-		u.report(detail)
+		fmt.Fprintln(u.out, detail)
 	}
 	for _, line := range strings.Split(strings.TrimSuffix(diff, "\n"), "\n") {
 		code := ""
@@ -157,157 +152,4 @@ func (u *terminalUI) preview(title, detail, diff string) {
 		}
 		fmt.Fprintln(u.out, u.paint(code, line))
 	}
-}
-
-func (u *terminalUI) report(markdown string) {
-	lines := strings.Split(strings.TrimSpace(markdown), "\n")
-	inCode := false
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		trimmed := strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(trimmed, "```"):
-			inCode = !inCode
-			continue
-		case inCode:
-			fmt.Fprintln(u.out, u.paint("2", "  │ ")+line)
-		case strings.HasPrefix(trimmed, "# "):
-			tone := "1;33"
-			if strings.Contains(strings.ToLower(trimmed), "good to go") {
-				tone = "1;32"
-			}
-			fmt.Fprintln(u.out, "\n"+u.paint(tone, strings.TrimPrefix(trimmed, "# ")))
-			fmt.Fprintln(u.out, u.paint("2", strings.Repeat("─", 58)))
-		case strings.HasPrefix(trimmed, "## "):
-			fmt.Fprintln(u.out, "\n"+u.paint("1;36", strings.TrimPrefix(trimmed, "## ")))
-		case strings.HasPrefix(trimmed, "### "):
-			fmt.Fprintln(u.out, "\n"+u.paint("1", strings.TrimPrefix(trimmed, "### ")))
-		case strings.HasPrefix(trimmed, "**Verdict:**"):
-			verdict := strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "**Verdict:**")), "`")
-			tone, mark := "1;33", "!"
-			if verdict == "good_to_go" {
-				tone, mark = "1;32", "✓"
-			} else if verdict == "not_ready" {
-				tone = "1;31"
-			}
-			fmt.Fprintln(u.out, "\n"+u.paint(tone, mark+"  VERDICT  "+strings.ReplaceAll(verdict, "_", " ")))
-		case trimmed == "---":
-			fmt.Fprintln(u.out, u.paint("2", strings.Repeat("─", 58)))
-		case strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* "):
-			fmt.Fprintln(u.out, "  "+u.paint("36", "•")+" "+u.inline(trimmed[2:]))
-		case strings.HasPrefix(trimmed, "|"):
-			end := i
-			for end < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[end]), "|") {
-				end++
-			}
-			if end-i > 1 {
-				u.table(lines[i:end])
-				i = end - 1
-			} else {
-				fmt.Fprintln(u.out, u.inline(trimmed))
-			}
-		default:
-			fmt.Fprintln(u.out, u.inline(line))
-		}
-	}
-}
-
-func (u *terminalUI) table(lines []string) {
-	rows := make([][]string, 0, len(lines))
-	widths := []int{}
-	for _, line := range lines {
-		if strings.Trim(strings.TrimSpace(line), "|-: ") == "" {
-			continue
-		}
-		cells := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), "|")
-		for j := range cells {
-			cells[j] = strings.TrimSpace(cells[j])
-			if j >= len(widths) {
-				widths = append(widths, 0)
-			}
-			if width := len([]rune(cells[j])); width > widths[j] {
-				widths[j] = width
-			}
-		}
-		rows = append(rows, cells)
-	}
-	if len(rows) == 0 {
-		return
-	}
-	totalWidth := len(widths) + 1
-	for _, width := range widths {
-		totalWidth += width + 2
-	}
-	if totalWidth > 100 && len(rows) > 1 {
-		for _, row := range rows[1:] {
-			if len(row) == 0 {
-				continue
-			}
-			fmt.Fprintln(u.out, "  "+u.paint("1;36", row[0]))
-			for j := 1; j < len(row) && j < len(rows[0]); j++ {
-				value := strings.Trim(row[j], "`")
-				for k, part := range wrapWords(value, 68) {
-					if k == 0 {
-						fmt.Fprintln(u.out, "    "+u.paint("2", rows[0][j]+": ")+part)
-					} else {
-						fmt.Fprintln(u.out, "      "+part)
-					}
-				}
-			}
-		}
-		return
-	}
-	border := func(left, middle, right string) string {
-		parts := make([]string, len(widths))
-		for j, width := range widths {
-			parts[j] = strings.Repeat("─", width+2)
-		}
-		return left + strings.Join(parts, middle) + right
-	}
-	fmt.Fprintln(u.out, u.paint("2", border("┌", "┬", "┐")))
-	for i, cells := range rows {
-		parts := make([]string, len(widths))
-		for j, width := range widths {
-			value := ""
-			if j < len(cells) {
-				value = cells[j]
-			}
-			padding := strings.Repeat(" ", width-len([]rune(value)))
-			if i == 0 {
-				value = u.paint("1", u.inline(value))
-			} else if j == 1 {
-				tone := ""
-				switch {
-				case strings.HasPrefix(value, "✓"):
-					tone = "32"
-				case strings.HasPrefix(value, "✗"):
-					tone = "31"
-				case strings.HasPrefix(value, "—"):
-					tone = "33"
-				}
-				value = u.paint(tone, value)
-			} else {
-				value = u.inline(value)
-			}
-			parts[j] = " " + value + padding + " "
-		}
-		fmt.Fprintln(u.out, u.paint("2", "│")+strings.Join(parts, u.paint("2", "│"))+u.paint("2", "│"))
-		if i == 0 && len(rows) > 1 {
-			fmt.Fprintln(u.out, u.paint("2", border("├", "┼", "┤")))
-		}
-	}
-	fmt.Fprintln(u.out, u.paint("2", border("└", "┴", "┘")))
-}
-
-func (u *terminalUI) inline(s string) string {
-	parts := strings.Split(s, "**")
-	for i := 1; i < len(parts); i += 2 {
-		parts[i] = u.paint("1", parts[i])
-	}
-	s = strings.Join(parts, "")
-	parts = strings.Split(s, "`")
-	for i := 1; i < len(parts); i += 2 {
-		parts[i] = u.paint("36", parts[i])
-	}
-	return strings.Join(parts, "")
 }

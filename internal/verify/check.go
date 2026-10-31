@@ -69,7 +69,7 @@ func checkMain(ctx context.Context, args []string) int {
 	flags.BoolVar(&o.AddTest, "add-test", false, "Add the generated test to the current checkout after verification")
 	flags.BoolVar(&o.NonInteractive, "non-interactive", false, "Do not ask to add the test")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: verify [options]\n       verify check [options]\n       verify start [options]\n       verify update\n       verify --version\n\nVerify a Git change with a focused test on the base and changed revisions.\nOptions:")
+		fmt.Fprintln(flags.Output(), "Usage: verify [options]\n       verify check [options]\n       verify update\n       verify --version\n\nVerify a Git change with a focused test on the base and changed revisions.\nOptions:")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {

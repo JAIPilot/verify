@@ -23,7 +23,6 @@ type workspace struct {
 	Root, Base, Baseline, Candidate, RunDir string
 	Original                                tree
 	Known                                   map[string]bool
-	BaselineScope, FinalScope               []string
 }
 
 func git(root string, input []byte, args ...string) ([]byte, error) {
@@ -264,24 +263,6 @@ func prepare(root, base string) (*workspace, error) {
 			return nil, e
 		}
 	}
-	old, err := snapshot(w.Baseline, w.Known)
-	if err != nil {
-		return nil, err
-	}
-	candidate, err := snapshot(w.Candidate, w.Known)
-	if err != nil {
-		return nil, err
-	}
-	for _, p := range changed(old, candidate) {
-		if sourcePath(p) {
-			if _, ok := old[p]; ok {
-				w.BaselineScope = append(w.BaselineScope, p)
-			}
-			if _, ok := candidate[p]; ok {
-				w.FinalScope = append(w.FinalScope, p)
-			}
-		}
-	}
 	now, err := snapshot(root, w.Known)
 	if err != nil {
 		return nil, err
@@ -312,129 +293,4 @@ func writeBytes(p string, b []byte, mode os.FileMode) error {
 		return err
 	}
 	return os.Rename(name, p)
-}
-func (w *workspace) diff() (string, error) {
-	b, err := git(w.Candidate, nil, "diff", "--no-ext-diff", "--no-renames", w.Base, "--")
-	if err != nil {
-		return "", err
-	}
-	current, err := snapshot(w.Candidate, w.Known)
-	if err != nil {
-		return "", err
-	}
-	var out strings.Builder
-	out.Write(b)
-	tracked, err := git(w.Candidate, nil, "ls-files", "-z")
-	if err != nil {
-		return "", err
-	}
-	known := map[string]bool{}
-	for _, p := range paths(tracked) {
-		known[p] = true
-	}
-	names := []string{}
-	for p := range current {
-		if !known[p] {
-			names = append(names, p)
-		}
-	}
-	sort.Strings(names)
-	for _, p := range names {
-		data, e := os.ReadFile(filepath.Join(w.Candidate, p))
-		if e != nil {
-			return "", e
-		}
-		fmt.Fprintf(&out, "\n--- /dev/null\n+++ b/%s\n", p)
-		if bytes.IndexByte(data, 0) >= 0 {
-			fmt.Fprintf(&out, "Binary file added (%d bytes); inspect the local file directly.\n", len(data))
-			continue
-		}
-		for _, line := range strings.Split(string(data), "\n") {
-			out.WriteByte('+')
-			out.WriteString(line)
-			out.WriteByte('\n')
-		}
-	}
-	return out.String(), nil
-}
-
-func (w *workspace) reviewDiff(stage, full string) (string, error) {
-	path := filepath.Join(w.RunDir, stage+".diff")
-	if err := writeBytes(path, []byte(full), 0600); err != nil {
-		return "", err
-	}
-	if len(full) <= 48<<10 {
-		return full, nil
-	}
-	status, err := gitText(w.Candidate, "status", "--short", "--untracked-files=all")
-	if err != nil {
-		return "", err
-	}
-	if len(status) > 48<<10 {
-		status = status[:48<<10] + "\n… additional paths are in the saved diff"
-	}
-	return fmt.Sprintf("%d-byte diff saved to %s\nReview that file before accepting. Changed paths:\n%s", len(full), path, status), nil
-}
-func (w *workspace) promote() error {
-	now, err := snapshot(w.Root, w.Known)
-	if err != nil {
-		return err
-	}
-	if fingerprint(now) != fingerprint(w.Original) {
-		return errors.New("original checkout changed during verification; verified worktrees retained, no changes applied")
-	}
-	candidate, err := snapshot(w.Candidate, w.Known)
-	if err != nil {
-		return err
-	}
-	names := changed(w.Original, candidate)
-	type backup struct {
-		path   string
-		data   []byte
-		mode   os.FileMode
-		exists bool
-	}
-	backups := []backup{}
-	rollback := func() {
-		for i := len(backups) - 1; i >= 0; i-- {
-			b := backups[i]
-			if b.exists {
-				_ = writeBytes(b.path, b.data, b.mode)
-			} else {
-				_ = os.Remove(b.path)
-			}
-		}
-	}
-	for _, p := range names {
-		dest, e := safePath(w.Root, p)
-		if e != nil {
-			rollback()
-			return e
-		}
-		b := backup{path: dest}
-		if v, ok := w.Original[p]; ok {
-			b.exists = true
-			b.mode = v.Mode
-			b.data, e = os.ReadFile(dest)
-			if e != nil {
-				rollback()
-				return e
-			}
-		}
-		backups = append(backups, b)
-		if v, ok := candidate[p]; ok {
-			var data []byte
-			data, e = os.ReadFile(filepath.Join(w.Candidate, p))
-			if e == nil {
-				e = writeBytes(dest, data, v.Mode)
-			}
-		} else {
-			e = os.Remove(dest)
-		}
-		if e != nil {
-			rollback()
-			return e
-		}
-	}
-	return nil
 }
