@@ -360,7 +360,7 @@ func validateProposal(p checkProposal) error {
 		return errors.New("Claude proposed an unsupported test runner")
 	}
 	for _, arg := range parts[1:] {
-		if filepath.IsAbs(arg) || strings.HasPrefix(arg, "~/") || strings.Contains(arg, "=/") || arg == ".." || strings.HasPrefix(arg, "../") || strings.Contains(arg, "/../") {
+		if filepath.IsAbs(arg) || strings.HasPrefix(arg, "/") || strings.HasPrefix(arg, "~/") || strings.Contains(arg, "=/") || arg == ".." || strings.HasPrefix(arg, "../") || strings.Contains(arg, "/../") {
 			return errors.New("Claude proposed a test command outside the worktree")
 		}
 	}
