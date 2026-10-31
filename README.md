@@ -63,7 +63,23 @@ verify start --agent codex
 verify start --agent claude --base origin/main
 ~~~
 
-`verify start` requires a signed-in Codex or Claude Code CLI. It can propose source edits and final tests, and has a different approval flow. See [the legacy workflow](docs/how-it-works.md).
+`verify start` uses a signed-in Codex or Claude Code CLI and that provider's account; it does not consume JAIPilot credits. This earlier, four-stage workflow still:
+
+1. Adds characterization tests on the base revision and replays them on the change.
+2. Asks about unclear intent before editing, then shows the complete candidate diff for approval.
+3. Adds tests for accepted behavior, runs the full suite, and measures native coverage when available.
+4. Lets you decide whether to apply the tested candidate diff to your checkout.
+
+See [the detailed workflow](docs/how-it-works.md) for its evidence and approval rules.
+
+### Spring Petclinic video
+
+<p align="center">
+  <img src="assets/verify-petclinic-story.gif" alt="Earlier Verify workflow in Spring Petclinic: baseline tests, review decisions, final tests, and report" width="1000">
+</p>
+
+This recording shows an earlier, multi-stage Verify workflow on Spring Petclinic. It illustrates the baseline, review, and final test sequence; the default `verify` command in v0.2.0 has a different terminal flow. See the [recording notes](assets/demo/README.md) for the exact run and measured results.
+
 Run `verify --help` for the new check options or `verify start --help` for the earlier workflow options.
 
 ## What you see
